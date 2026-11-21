@@ -30,12 +30,12 @@ export function Categories() {
   };
 
   return (
-    <div className="max-w-3xl">
+    <div className="max-w-2xl">
       <p className="text-slate-600 mb-3">Categories group your items so they are easy to find and filter. Open an item to change its category.</p>
       {canManage && (
-        <form className="flex gap-2 mb-4 max-w-md" onSubmit={async (e) => { e.preventDefault(); if (!name.trim()) return; if (await run(() => post("/api/categories", { name: name.trim() }), "Category added")) setName(""); }}>
-          <Input placeholder="New category name" value={name} onChange={(e) => setName(e.target.value)} aria-label="New category name" />
-          <Button variant="primary" type="submit" disabled={busy || !name.trim()}>Add category</Button>
+        <form className="flex flex-wrap items-center gap-2 mb-4" onSubmit={async (e) => { e.preventDefault(); if (!name.trim()) return; if (await run(() => post("/api/categories", { name: name.trim() }), "Category added")) setName(""); }}>
+          <Input placeholder="New category name" value={name} onChange={(e) => setName(e.target.value)} aria-label="New category name" className="!w-64 max-w-full" />
+          <Button variant="primary" type="submit" disabled={busy || !name.trim()} className="shrink-0 whitespace-nowrap">Add category</Button>
         </form>
       )}
       <div className="bg-white border border-line rounded-xl shadow-card overflow-auto">
@@ -46,7 +46,7 @@ export function Categories() {
               <tr key={c.id}>
                 <td className={td}>
                   {edit?.id === c.id
-                    ? <Input autoFocus value={edit.name} onChange={(e) => setEdit({ id: c.id, name: e.target.value })} aria-label="Category name"
+                    ? <Input autoFocus value={edit.name} onChange={(e) => setEdit({ id: c.id, name: e.target.value })} aria-label="Category name" className="!w-56 max-w-full"
                         onKeyDown={async (e) => { if (e.key === "Enter" && edit.name.trim() && (await run(() => api("PATCH", `/api/categories/${c.id}`, { name: edit.name.trim() }), "Category renamed"))) setEdit(null); if (e.key === "Escape") setEdit(null); }} />
                     : <span className="font-medium">{c.name}</span>}
                 </td>
@@ -54,7 +54,7 @@ export function Categories() {
                 {canManage && (
                   <td className={`${td} whitespace-nowrap text-right`}>
                     {edit?.id === c.id ? (
-                      <span className="inline-flex gap-2">
+                      <span className="inline-flex gap-2 whitespace-nowrap">
                         <Button variant="primary" className="!py-1.5" disabled={busy || !edit.name.trim()} onClick={async () => { if (await run(() => api("PATCH", `/api/categories/${c.id}`, { name: edit.name.trim() }), "Category renamed")) setEdit(null); }}>Save</Button>
                         <Button className="!py-1.5" onClick={() => setEdit(null)}>Cancel</Button>
                       </span>
