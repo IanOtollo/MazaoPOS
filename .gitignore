@@ -1,0 +1,7 @@
+node_modules
+data/*.db*
+web/dist
+.env
+data/backups/
+data/*.txt
+data/test-backups/
