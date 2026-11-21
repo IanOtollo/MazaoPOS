@@ -5,3 +5,5 @@ web/dist
 data/backups/
 data/*.txt
 data/test-backups/
+.env.local
+
