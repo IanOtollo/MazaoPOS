@@ -158,7 +158,7 @@ function Staff() {
                     <Button onClick={() => setModal(r)} className="!py-1.5">Edit</Button>
                     {r.id !== user.id && (
                       <Button variant="danger" className="!py-1.5" onClick={async () => {
-                        if (!(await confirm({ title: `Delete ${r.name}?`, body: "They will no longer be able to sign in and their PIN is freed for someone else. Their past sales and records stay on file under their name. This cannot be undone. To only stop them signing in for now, choose Edit and untick Active instead.", confirmLabel: "Delete", danger: true }))) return;
+                        if (!(await confirm({ title: `Delete ${r.name}?`, body: "They can no longer sign in. Their past sales stay on record.", confirmLabel: "Delete", danger: true }))) return;
                         try { await api("DELETE", `/api/users/${r.id}`); toast({ msg: `${r.name} deleted` }); load(); }
                         catch (e) { toast({ msg: (e as Error).message, kind: "err" }); }
                       }}>Delete</Button>

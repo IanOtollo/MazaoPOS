@@ -1,7 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from "react";
 import { onNotifyError } from "./notify";
 import { AlertTriangle, CheckCircle2, Info, X } from "lucide-react";
-import { Button, Modal } from "./ui";
+import { Button } from "./ui";
 
 interface ToastOpts { msg: string; kind?: "ok" | "err" | "info"; action?: { label: string; run: () => void } }
 interface ToastItem extends ToastOpts { id: number }
@@ -28,6 +28,12 @@ export function FeedbackProvider({ children }: { children: ReactNode }) {
   const confirm = useCallback((o: ConfirmOpts) => new Promise<boolean>((resolve) => setAsk({ ...o, resolve })), []);
 
   const answer = (v: boolean) => { ask?.resolve(v); setAsk(null); };
+  useEffect(() => {
+    if (!ask) return;
+    const esc = (e: KeyboardEvent) => { if (e.key === "Escape") { ask.resolve(false); setAsk(null); } };
+    window.addEventListener("keydown", esc);
+    return () => window.removeEventListener("keydown", esc);
+  }, [ask]);
 
   return (
     <ToastCtx.Provider value={toast}>
@@ -52,13 +58,25 @@ export function FeedbackProvider({ children }: { children: ReactNode }) {
           })}
         </div>
         {ask && (
-          <Modal title={ask.title} onClose={() => answer(false)}>
-            {ask.body && <p className="text-slate-600 mb-5">{ask.body}</p>}
-            <div className="flex justify-end gap-2">
-              <Button onClick={() => answer(false)}>Cancel</Button>
-              <Button variant={ask.danger ? "danger" : "primary"} onClick={() => answer(true)} autoFocus>{ask.confirmLabel ?? "Confirm"}</Button>
+          <div className="fixed inset-0 z-[65] bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-4 print:hidden" onClick={() => answer(false)}>
+            <div role="alertdialog" aria-modal="true" aria-labelledby="confirm-title" aria-describedby={ask.body ? "confirm-body" : undefined}
+              onClick={(e) => e.stopPropagation()} className="modal-in w-full max-w-sm rounded-xl bg-white shadow-pop p-5">
+              <div className="flex gap-3">
+                <span className={`size-10 shrink-0 rounded-full flex items-center justify-center ${ask.danger ? "bg-red-50 text-danger" : "bg-blue-50 text-accent"}`}>
+                  {ask.danger ? <AlertTriangle className="size-5" aria-hidden /> : <Info className="size-5" aria-hidden />}
+                </span>
+                <div className="min-w-0">
+                  <h2 id="confirm-title" className="font-bold text-lg leading-tight">{ask.title}</h2>
+                  {ask.body && <p id="confirm-body" className="text-sm text-slate-600 mt-1">{ask.body}</p>}
+                </div>
+              </div>
+              <div className="flex justify-end gap-2 mt-5">
+                <Button onClick={() => answer(false)} autoFocus={!!ask.danger}>Cancel</Button>
+                <Button variant={ask.danger ? "danger" : "primary"} onClick={() => answer(true)} autoFocus={!ask.danger}
+                  className={ask.danger ? "!bg-red-600 !border-red-600 !text-white hover:!bg-red-700" : ""}>{ask.confirmLabel ?? "Confirm"}</Button>
+              </div>
             </div>
-          </Modal>
+          </div>
         )}
       </ConfirmCtx.Provider>
     </ToastCtx.Provider>
