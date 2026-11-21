@@ -18,6 +18,8 @@ import type * as mod_misc from "../mod/misc.js";
 import type * as mod_reports from "../mod/reports.js";
 import type * as mod_sales from "../mod/sales.js";
 import type * as mod_suppliers from "../mod/suppliers.js";
+import type * as receivablesLib from "../receivablesLib.js";
+import type * as testing from "../testing.js";
 
 import type {
   ApiFromModules,
@@ -36,6 +38,8 @@ declare const fullApi: ApiFromModules<{
   "mod/reports": typeof mod_reports;
   "mod/sales": typeof mod_sales;
   "mod/suppliers": typeof mod_suppliers;
+  receivablesLib: typeof receivablesLib;
+  testing: typeof testing;
 }>;
 
 /**

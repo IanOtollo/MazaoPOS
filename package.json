@@ -10,6 +10,7 @@
     "start": "tsx server/index.ts",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "test": "tsx server/smoke.test.ts",
+    "test:convex": "tsx server/convex.test.ts",
     "build": "npm run build:web"
   },
   "keywords": [],

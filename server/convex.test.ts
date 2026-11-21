@@ -1,0 +1,605 @@
+// End-to-end API check against the Convex backend.
+// Run: npm run test:convex   (wipes the DEV deployment first; refuses on any deployment without TEST_RESET_ALLOWED=1)
+import { spawnSync } from "node:child_process";
+import assert from "node:assert/strict";
+
+const base = (process.env.BASE_URL ?? "https://agreeable-mastiff-137.convex.site").replace(/\/+$/, "");
+const convexRun = (fn: string, args: object = {}) => {
+  const r = spawnSync("npx", ["convex", "run", fn, JSON.stringify(JSON.stringify(args))], { shell: true, encoding: "utf8" });
+  if (r.status !== 0) throw new Error("convex run " + fn + " failed: " + r.stdout + r.stderr);
+};
+convexRun("testing:reset");
+let token = "";
+async function api(method: string, path: string, body?: unknown, tok = token) {
+  const r = await fetch(base + path, {
+    method,
+    headers: { ...(body !== undefined ? { "content-type": "application/json" } : {}), ...(tok ? { authorization: `Bearer ${tok}` } : {}) },
+    body: body === undefined ? undefined : JSON.stringify(body),
+  });
+  const j = await r.json().catch(() => ({}));
+  return { status: r.status, body: j as any };
+}
+
+try {
+  // --- login
+  const bad = await api("POST", "/api/auth/login", { pin: "9999" });
+  assert.equal(bad.status, 401);
+  const ok = await api("POST", "/api/auth/login", { pin: "1234" });
+  assert.equal(ok.status, 200);
+  token = ok.body.token;
+
+  // --- cashier + products
+  const roles = (await api("GET", "/api/roles")).body as { id: number; name: string }[];
+  const roleId = (n: string) => roles.find((r) => r.name === n)!.id;
+  const cashier = await api("POST", "/api/users", { name: "Wanjiru", pin: "5678", roleId: roleId("Cashier") });
+  assert.equal(cashier.status, 200, JSON.stringify(cashier.body));
+  const cashierLogin = await api("POST", "/api/auth/login", { pin: "5678" }, "");
+  assert.equal(cashierLogin.body.user.name, "Wanjiru", "PIN alone identifies the user");
+  const cashierTok = cashierLogin.body.token as string;
+
+  const nail = await api("POST", "/api/products", {
+    sku: "NAIL-3", name: "Nails 3 inch (kg)", unit: "kg", allowFraction: true, vatCode: "A",
+    costCents: 10000, priceRetailCents: 15000, priceContractorCents: 13000,
+  });
+  const pipe = await api("POST", "/api/products", {
+    sku: "PVC-1", name: "PVC pipe 1 inch", unit: "m", allowFraction: true, vatCode: "A",
+    costCents: 20000, priceRetailCents: 29000,
+  });
+  const cement = await api("POST", "/api/products", {
+    sku: "CEM-50", name: "Cement 50kg", unit: "bag", vatCode: "E", costCents: 70000, priceRetailCents: 80000,
+  });
+  assert.equal(nail.status, 200);
+  for (const p of [nail, pipe, cement])
+    await api("POST", "/api/stock/receive", { productId: p.body.id, locationId: 1, qtyMilli: 100_000, unitCostCents: undefined });
+
+  // --- cashier cannot sell without a shift
+  let r = await api("POST", "/api/sales", { items: [{ productId: nail.body.id, qtyMilli: 1000 }], payments: [{ method: "cash", amountCents: 15000 }] }, cashierTok);
+  assert.equal(r.status, 400, "needs shift");
+  await api("POST", "/api/shifts/open", { floatCents: 100000 }, cashierTok);
+
+  // --- fractional sale: 2.5 kg nails @150 = 375.00 ; 3 m pipe @290 = 870.00 ; total 1245.00 ; pay 1300 cash
+  r = await api(
+    "POST", "/api/sales",
+    { items: [{ productId: nail.body.id, qtyMilli: 2500 }, { productId: pipe.body.id, qtyMilli: 3000 }], payments: [{ method: "cash", amountCents: 130000 }] },
+    cashierTok,
+  );
+  assert.equal(r.status, 200, JSON.stringify(r.body));
+  assert.equal(r.body.total_cents, 124500);
+  assert.equal(r.body.changeCents, 5500);
+  assert.equal(r.body.vat_cents, Math.round((124500 * 0.16) / 1.16));
+  assert.equal(r.body.payments[0].amount_cents, 124500, "cash recorded net of change");
+  const saleId = r.body.id;
+
+  // --- stock deducted exactly
+  const prods = await api("GET", "/api/products?q=nails");
+  assert.equal(prods.body[0].stock_shop, 100_000 - 2500);
+
+  // --- fractions rejected for whole-unit items
+  r = await api("POST", "/api/sales", { items: [{ productId: cement.body.id, qtyMilli: 1500 }], payments: [{ method: "cash", amountCents: 200000 }] }, cashierTok);
+  assert.equal(r.status, 400);
+
+  // --- insufficient stock
+  r = await api("POST", "/api/sales", { items: [{ productId: cement.body.id, qtyMilli: 999_000 }], payments: [{ method: "cash", amountCents: 1 }] }, cashierTok);
+  assert.equal(r.status, 409);
+
+  // --- short payment & discount needing approval
+  r = await api("POST", "/api/sales", { items: [{ productId: cement.body.id, qtyMilli: 1000 }], payments: [{ method: "cash", amountCents: 100 }] }, cashierTok);
+  assert.equal(r.status, 400);
+  r = await api("POST", "/api/sales", { items: [{ productId: cement.body.id, qtyMilli: 1000 }], discountCents: 5000, payments: [{ method: "cash", amountCents: 75000 }] }, cashierTok);
+  assert.equal(r.status, 403, "cashier discount needs manager");
+  r = await api("POST", "/api/sales", { items: [{ productId: cement.body.id, qtyMilli: 1000 }], discountCents: 5000, approvalPin: "1234", payments: [{ method: "cash", amountCents: 75000 }] }, cashierTok);
+  assert.equal(r.status, 200, JSON.stringify(r.body));
+  assert.equal(r.body.total_cents, 75000);
+  assert.equal(r.body.vat_cents, 0, "cement is VAT exempt");
+
+  // --- contractor tier price + credit sale + limit
+  const cust = await api("POST", "/api/customers", { name: "Kamau Builders", tier: "contractor", creditLimitCents: 500000 });
+  r = await api("POST", "/api/sales", { items: [{ productId: nail.body.id, qtyMilli: 10_000 }], customerId: cust.body.id, approvalPin: "1234", payments: [{ method: "credit", amountCents: 130000 }] }, cashierTok);
+  assert.equal(r.status, 200, JSON.stringify(r.body)); // contractor price 130/kg*10 = 1300.00
+  assert.equal(r.body.total_cents, 130000);
+  let c = await api("GET", `/api/customers/${cust.body.id}`);
+  assert.equal(c.body.balance_cents, 130000);
+  r = await api("POST", "/api/sales", { items: [{ productId: cement.body.id, qtyMilli: 10_000 }], customerId: cust.body.id, approvalPin: "1234", payments: [{ method: "credit", amountCents: 800000 }] }, cashierTok);
+  assert.equal(r.status, 409, "credit limit");
+  await api("POST", `/api/customers/${cust.body.id}/payment`, { amountCents: 30000, method: "cash" });
+  c = await api("GET", `/api/customers/${cust.body.id}`);
+  assert.equal(c.body.balance_cents, 100000);
+
+  // --- refund: cashier needs approval; over-refund blocked
+  const sale = await api("GET", `/api/sales/${saleId}`, undefined, cashierTok);
+  const item = sale.body.items[1]; // pipe 3 m
+  r = await api("POST", `/api/sales/${saleId}/refund`, { items: [{ saleItemId: item.id, qtyMilli: 1000 }], method: "cash", reason: "wrong size" }, cashierTok);
+  assert.equal(r.status, 403);
+  r = await api("POST", `/api/sales/${saleId}/refund`, { items: [{ saleItemId: item.id, qtyMilli: 1000 }], method: "cash", reason: "wrong size", approvalPin: "1234" }, cashierTok);
+  assert.equal(r.status, 200, JSON.stringify(r.body));
+  assert.equal(r.body.total_cents, -29000);
+  r = await api("POST", `/api/sales/${saleId}/refund`, { items: [{ saleItemId: item.id, qtyMilli: 2500 }], method: "cash", reason: "x", approvalPin: "1234" }, cashierTok);
+  assert.equal(r.status, 400, "cannot refund more than sold");
+  const after = await api("GET", "/api/products?q=PVC");
+  assert.equal(after.body[0].stock_shop, 100_000 - 3000 + 1000, "restocked");
+
+  // --- shift close reconciles: float 1000 + cash(1245 + 750 - 290) = 2705.00
+  const close = await api("POST", "/api/shifts/close", { countedCashCents: 270500 }, cashierTok);
+  assert.equal(close.body.expectedCashCents, 100000 + 124500 + 75000 - 29000);
+  assert.equal(close.body.varianceCents, 0);
+
+  // --- report agrees with the ledger
+  const rep = await api("GET", "/api/reports/summary");
+  assert.equal(rep.body.gross_cents, 124500 + 75000 + 130000 - 29000);
+
+
+  // =================== RBAC ===================
+  // duplicate PINs are refused (PIN-only sign-in needs them unique)
+  const dup = await api("POST", "/api/users", { name: "Copycat", pin: "5678", roleId: roleId("Cashier") });
+  assert.equal(dup.status, 409, "duplicate PIN");
+
+  // the staff list is no longer public
+  assert.equal((await api("GET", "/api/auth/users", undefined, "")).status, 404, "no public staff list");
+
+  // cashier: blocked from every back-office area
+  for (const [m, p, b] of [
+    ["GET", "/api/users"], ["GET", "/api/reports/summary"], ["GET", "/api/audit"], ["GET", "/api/shifts"],
+    ["POST", "/api/products", { sku: "X", name: "X", priceRetailCents: 100 }], ["POST", "/api/stock/receive", { productId: nail.body.id, locationId: 1, qtyMilli: 1000 }],
+    ["PUT", "/api/settings", { business_name: "Hacked" }], ["POST", "/api/roles", { name: "Evil", permissions: [] }],
+  ] as [string, string, unknown?][]) {
+    const x = await api(m, p, b, cashierTok);
+    assert.equal(x.status, 403, `cashier must not ${m} ${p} (got ${x.status})`);
+  }
+  // ...and cannot see buying prices
+  const seen = await api("GET", "/api/products?q=nails", undefined, cashierTok);
+  assert.equal(seen.body[0].cost_cents, 0, "cost hidden from cashier");
+  assert.ok((await api("GET", "/api/products?q=nails")).body[0].cost_cents > 0, "admin sees cost");
+
+  // manager: can approve a cashier's discount with their PIN, but cannot manage roles or staff
+  const mgr = await api("POST", "/api/users", { name: "Otieno", pin: "4321", roleId: roleId("Manager") });
+  const mgrTok = (await api("POST", "/api/auth/login", { pin: "4321" }, "")).body.token as string;
+  assert.equal((await api("POST", "/api/roles", { name: "Evil", permissions: [] }, mgrTok)).status, 403, "manager cannot manage roles");
+  assert.equal((await api("GET", "/api/users", undefined, mgrTok)).status, 403, "manager cannot manage staff");
+  assert.equal((await api("GET", "/api/reports/summary", undefined, mgrTok)).status, 200, "manager sees reports");
+  await api("POST", "/api/shifts/open", { floatCents: 0 }, cashierTok);
+  r = await api("POST", "/api/sales", { items: [{ productId: cement.body.id, qtyMilli: 1000 }], discountCents: 1000, approvalPin: "4321", payments: [{ method: "cash", amountCents: 79000 }] }, cashierTok);
+  assert.equal(r.status, 200, "manager PIN approves discount: " + JSON.stringify(r.body));
+  assert.equal(r.body.approved_by, mgr.body.id, "approver recorded");
+  r = await api("POST", "/api/sales", { items: [{ productId: cement.body.id, qtyMilli: 1000 }], discountCents: 1000, approvalPin: "5678", payments: [{ method: "cash", amountCents: 79000 }] }, cashierTok);
+  assert.equal(r.status, 403, "a cashier's own PIN cannot approve");
+
+  // custom role: stock clerk can receive stock and see cost, but cannot sell
+  const role = await api("POST", "/api/roles", { name: "Stock clerk", description: "Receives goods", permissions: ["stock.manage", "products.view_cost"] });
+  assert.equal(role.status, 200, JSON.stringify(role.body));
+  await api("POST", "/api/users", { name: "Achieng", pin: "2468", roleId: role.body.id });
+  const clerkTok = (await api("POST", "/api/auth/login", { pin: "2468" }, "")).body.token as string;
+  assert.equal((await api("POST", "/api/stock/receive", { productId: nail.body.id, locationId: 1, qtyMilli: 1000 }, clerkTok)).status, 200, "clerk can receive");
+  assert.equal((await api("POST", "/api/shifts/open", { floatCents: 0 }, clerkTok)).status, 403, "clerk cannot open a till shift");
+  assert.ok((await api("GET", "/api/products?q=nails", undefined, clerkTok)).body[0].cost_cents > 0, "clerk sees cost");
+
+  // a role in use cannot be deleted; changing a role takes effect immediately
+  assert.equal((await api("DELETE", `/api/roles/${role.body.id}`)).status, 409, "role in use");
+  await api("PUT", `/api/roles/${role.body.id}`, { name: "Stock clerk", description: "", permissions: ["products.view_cost"] });
+  assert.equal((await api("POST", "/api/stock/receive", { productId: nail.body.id, locationId: 1, qtyMilli: 1000 }, clerkTok)).status, 403, "permission removed instantly");
+
+  // Admin role is locked; the admin cannot lock themselves out
+  assert.equal((await api("PUT", `/api/roles/${roleId("Admin")}`, { name: "Admin", description: "", permissions: [] })).status, 400, "admin role locked");
+  assert.equal((await api("PATCH", "/api/users/1", { roleId: roleId("Cashier") })).status, 400, "cannot demote the last role manager");
+  assert.equal((await api("PATCH", "/api/users/1", { active: false })).status, 400, "cannot disable yourself");
+  // a manager cannot reset the Admin's PIN (privilege escalation)
+  await api("PUT", `/api/roles/${roleId("Manager")}`, { name: "Manager", description: "", permissions: ["users.manage", "sales.create"] }); // admin grants users.manage
+  assert.equal((await api("PATCH", "/api/users/1", { pin: "9999" }, mgrTok)).status, 403, "cannot reset a more powerful user's PIN");
+  assert.equal((await api("POST", "/api/users", { name: "Boss2", pin: "1357", roleId: roleId("Admin") }, mgrTok)).status, 403, "cannot assign a role above your own");
+
+  // =================== product import ===================
+  const rowsIn = [
+    { name: "Hammer 16oz", sku: "HAM-16", category: "Tools", unit: "pc", vat: "16", cost: "380", retail: "600", shopStock: "10", storeStock: "5" },
+    { name: "Copper wire", sku: "CU-1", category: "Electrical", unit: "m", vat: "16", cost: "1,000", retail: "1,500.50", shopStock: "100" },
+    { name: "Cement 32.5", sku: "CEM-32", category: "Tools", unit: "bag", vat: "Exempt", cost: "600", retail: "700" },
+    { name: "", sku: "BAD-1", retail: "100" },
+    { name: "No price", sku: "BAD-2" },
+    { name: "Dupe of earlier", sku: "ham-16", retail: "50" },
+    { name: "Existing code", sku: "NAIL-3", retail: "50" },
+    { name: "Bad VAT", sku: "BAD-3", retail: "10", vat: "banana" },
+  ];
+  let imp = await api("POST", "/api/products/import", { rows: rowsIn, dryRun: true });
+  assert.equal(imp.status, 200, JSON.stringify(imp.body));
+  assert.equal(imp.body.valid, 3, "3 valid rows");
+  assert.equal(imp.body.invalid, 5, "5 invalid rows");
+  assert.ok(imp.body.errors.some((e: any) => e.row === 5 && /Name/.test(e.message)), "row numbers match the spreadsheet");
+  assert.equal((await api("GET", "/api/products?q=HAM-16")).body.length, 0, "dry run saves nothing");
+
+  assert.equal((await api("POST", "/api/products/import", { rows: rowsIn, dryRun: false }, cashierTok)).status, 403, "cashier cannot import");
+  imp = await api("POST", "/api/products/import", { rows: rowsIn, dryRun: false });
+  assert.equal(imp.body.imported, 3);
+  const ham = (await api("GET", "/api/products?q=HAM-16")).body[0];
+  assert.equal(ham.stock_shop, 10_000, "opening stock in shop");
+  assert.equal(ham.stock_store, 5_000, "opening stock in store");
+  assert.equal(ham.category, "Tools");
+  const cu = (await api("GET", "/api/products?q=CU-1")).body[0];
+  assert.equal(cu.price_retail_cents, 150050, "1,500.50 parsed");
+  assert.equal(cu.cost_cents, 100000, "1,000 parsed");
+  assert.equal(cu.allow_fraction, 1, "metres can be sold in fractions");
+  assert.equal((await api("GET", "/api/products?q=CEM-32")).body[0].vat_code, "E", "Exempt recognised");
+  imp = await api("POST", "/api/products/import", { rows: [rowsIn[0]], dryRun: true });
+  assert.equal(imp.body.invalid, 1, "re-importing the same file is refused, not duplicated");
+
+  // =================== dashboard ===================
+  assert.equal((await api("GET", "/api/dashboard", undefined, cashierTok)).status, 403, "cashier cannot open the dashboard");
+  const dash = await api("GET", "/api/dashboard?days=7");
+  assert.equal(dash.status, 200, JSON.stringify(dash.body));
+  const repToday = (await api("GET", "/api/reports/summary")).body;
+  assert.equal(dash.body.series.length, 7, "one point per day, empty days included");
+  assert.equal(dash.body.current.net_cents, repToday.gross_cents, "dashboard net sales agree with the report");
+  assert.equal(dash.body.series[6].net_cents, repToday.gross_cents, "today is the last day of the series");
+  assert.equal(dash.body.current.profit_cents, repToday.margin_cents, "profit agrees with the report");
+  assert.ok(dash.body.owing.total_cents > 0 && dash.body.owing.top[0].name === "Kamau Builders", "customers owing listed");
+  assert.equal(dash.body.hours.length, 24);
+  assert.ok(dash.body.topItems.length > 0 && dash.body.cashiers.length > 0);
+  assert.ok(dash.body.stockValue.cost_cents > 0, "admin sees stock value");
+  assert.equal((await api("GET", "/api/dashboard?days=1")).body.series.length, 1, "today view");
+  // reports permission without cost permission: no profit and no stock cost
+  const analyst = await api("POST", "/api/roles", { name: "Analyst", description: "", permissions: ["reports.view"] });
+  await api("POST", "/api/users", { name: "Auditor", pin: "1122", roleId: analyst.body.id });
+  const analystTok = (await api("POST", "/api/auth/login", { pin: "1122" }, "")).body.token as string;
+  const blind = await api("GET", "/api/dashboard?days=7", undefined, analystTok);
+  assert.equal(blind.status, 200);
+  assert.equal(blind.body.current.profit_cents, null, "profit hidden without products.view_cost");
+  assert.equal(blind.body.stockValue, null, "stock cost hidden without products.view_cost");
+  assert.ok(blind.body.current.net_cents > 0, "but sales figures are visible");
+
+  // every figure on the cards has a series behind its sparkline
+  assert.equal(dash.body.series[6].profit_cents, repToday.margin_cents, "the day's profit matches the report");
+  assert.equal(dash.body.series[6].vat_cents, repToday.vat_cents, "the day's VAT matches the report");
+  assert.ok(dash.body.hours.every((h: any) => typeof h.net_cents === "number"), "hourly takings are present for the Today view");
+  assert.ok(blind.body.series.every((x: any) => x.profit_cents === null), "no profit series without products.view_cost");
+
+  // custom date range
+  const todayStr = dash.body.to as string;
+  const one = await api("GET", `/api/dashboard?from=${todayStr}&to=${todayStr}`);
+  assert.equal(one.status, 200, JSON.stringify(one.body));
+  assert.equal(one.body.days, 1, "single-day custom range");
+  assert.equal(one.body.series.length, 1);
+  assert.equal(one.body.current.net_cents, repToday.gross_cents, "custom range for today equals today's report");
+  const wide = await api("GET", `/api/dashboard?from=2020-01-01&to=${todayStr}`);
+  assert.equal(wide.status, 400, "more than a year is refused");
+  assert.equal((await api("GET", `/api/dashboard?from=${todayStr}&to=2020-01-01`)).status, 400, "start after end is refused");
+  assert.equal((await api("GET", `/api/dashboard?from=${todayStr}&to=2099-01-01`)).status, 400, "future end is refused");
+  assert.equal((await api("GET", `/api/dashboard?from=${todayStr}`)).status, 400, "both dates are required");
+  assert.equal((await api("GET", `/api/dashboard?from=2026-02-30&to=2026-03-01`)).status, 400, "impossible dates are refused");
+  const past = await api("GET", "/api/dashboard?from=2020-01-01&to=2020-01-31");
+  assert.equal(past.status, 200);
+  assert.equal(past.body.current.net_cents, 0, "a quiet period reports zero, not an error");
+  assert.equal(past.body.series.length, 31);
+
+
+  // =================== the admin does not use the till ===================
+  const me = await api("GET", "/api/me");
+  assert.ok(!me.body.permissions.includes("sales.create"), "admin has no till permission");
+  assert.ok(me.body.permissions.includes("roles.manage") && me.body.permissions.includes("sales.approve"), "admin keeps every back-office permission");
+  const adminSale = await api("POST", "/api/sales", { items: [{ productId: nail.body.id, qtyMilli: 1000 }], payments: [{ method: "cash", amountCents: 15000 }] });
+  assert.equal(adminSale.status, 403, "admin cannot sell");
+  assert.equal((await api("POST", "/api/shifts/open", { floatCents: 0 })).status, 403, "admin cannot open a till shift");
+  assert.equal((await api("POST", "/api/sales/1/refund", { items: [{ saleItemId: 1, qtyMilli: 1000 }], method: "cash", reason: "x" })).status, 403, "admin cannot process refunds at a till");
+  // ...but the admin can still approve a cashier's discount with their PIN (done earlier with PIN 1234)
+  const adminRole = (await api("GET", "/api/roles")).body.find((x: any) => x.name === "Admin");
+  assert.ok(!adminRole.permissions.includes("sales.create"), "Admin role lists no till permission");
+  assert.equal(adminRole.permissions.length, 18, "Admin holds the 18 back-office permissions");
+  // managers (small shops) and cashiers can still sell
+  assert.equal((await api("POST", "/api/shifts/open", { floatCents: 0 }, mgrTok)).status, 200, "manager can open a till shift");
+  // reports detail used by the Reports screen
+  const detail = await api("GET", "/api/dashboard?days=7");
+  assert.ok(Array.isArray(detail.body.byVat) && detail.body.byVat.length > 0, "VAT breakdown present");
+
+
+  // =================== customers who owe: ageing, follow-ups, credit control ===================
+  const lp = await api("POST", "/api/customers", { name: "Late Payer", phone: "0700 111 222", tier: "retail", creditLimitCents: 500000, creditDays: 30 });
+  assert.equal(lp.status, 200, JSON.stringify(lp.body));
+  const lpId = lp.body.id as number;
+  convexRun("testing:addDebt", { who: "customer", id: lpId, amountCents: 100000, daysAgo: 45 });
+  convexRun("testing:addDebt", { who: "customer", id: lpId, amountCents: 50000, daysAgo: 10 });
+  // a part payment settles the OLDEST debt first
+  assert.equal((await api("POST", `/api/customers/${lpId}/payment`, { amountCents: 30000, method: "cash" })).status, 200);
+  let acct = await api("GET", `/api/customers/${lpId}/account`);
+  assert.equal(acct.status, 200);
+  assert.equal(acct.body.balance_cents, 120000, "1,500 owed minus 300 paid");
+  assert.equal(acct.body.ageing.balance_cents, 120000);
+  assert.equal(acct.body.ageing.buckets.d1_30, 70000, "the old debt is 15 days past its 30-day terms, with the payment taken off it");
+  assert.equal(acct.body.ageing.buckets.current, 50000, "the newer debt is not yet due");
+  assert.equal(acct.body.ageing.overdue_cents, 70000);
+  assert.equal(acct.body.ageing.max_days_overdue, 15);
+  assert.equal(acct.body.statement[0].balance_cents, 120000, "statement shows a running balance, newest first");
+  assert.equal(acct.body.statement.at(-1).balance_cents, 100000, "oldest line first in the running balance");
+
+  // the owing list
+  let rec = await api("GET", "/api/receivables");
+  const row = rec.body.customers.find((c: any) => c.id === lpId);
+  assert.ok(row, "Late Payer is on the owing list");
+  assert.equal(row.overdue_cents, 70000);
+  assert.equal(row.max_days_overdue, 15);
+  assert.ok(rec.body.totals.overdue_cents >= 70000 && rec.body.totals.owed_cents >= 120000);
+  assert.equal(rec.body.customers.some((c: any) => c.balance_cents <= 0), false, "only people who owe appear");
+
+  // follow-ups: cashiers cannot log them; a missed promise is detected, a kept one is not
+  assert.equal((await api("POST", `/api/customers/${lpId}/notes`, { kind: "call", body: "x" }, cashierTok)).status, 403, "cashier cannot log follow-ups");
+  assert.equal((await api("POST", `/api/customers/${lpId}/notes`, { kind: "call", body: "" })).status, 400, "an empty note is refused");
+  assert.equal((await api("POST", `/api/customers/${lpId}/notes`, { kind: "promise", body: "" })).status, 400, "a promise needs a date");
+  assert.equal((await api("POST", `/api/customers/${lpId}/notes`, { kind: "call", body: "Phoned, says cheque on Friday" })).status, 200);
+  const yesterday = new Date(Date.now() + 3 * 3600000 - 86400000).toISOString().slice(0, 10);
+  assert.equal((await api("POST", `/api/customers/${lpId}/notes`, { kind: "promise", promiseDate: yesterday, promiseCents: 70000 })).status, 200);
+  rec = await api("GET", "/api/receivables");
+  assert.equal(rec.body.customers.find((c: any) => c.id === lpId).promise_broken, true, "promised yesterday, paid nothing since");
+  await api("POST", `/api/customers/${lpId}/payment`, { amountCents: 70000, method: "mpesa", reference: "SHK123" });
+  rec = await api("GET", "/api/receivables");
+  assert.equal(rec.body.customers.find((c: any) => c.id === lpId).promise_broken, false, "promise kept once the money arrived");
+  acct = await api("GET", `/api/customers/${lpId}/account`);
+  assert.equal(acct.body.notes.length, 2, "both follow-ups are on file");
+  assert.equal(acct.body.ageing.overdue_cents, 0, "the overdue debt is now fully paid");
+  assert.equal(acct.body.balance_cents, 50000);
+
+  // credit control: optionally refuse more credit to badly overdue customers
+  convexRun("testing:addDebt", { who: "customer", id: lpId, amountCents: 80000, daysAgo: 60 });
+  const creditSale = () => api("POST", "/api/sales", { items: [{ productId: nail.body.id, qtyMilli: 1000 }], customerId: lpId, approvalPin: "1234", payments: [{ method: "credit", amountCents: 15000 }] }, cashierTok);
+  assert.equal((await creditSale()).status, 200, "with the rule off, credit is still given");
+  assert.equal((await api("PUT", "/api/settings", { block_credit_overdue_days: "10" })).status, 200);
+  const blocked = await creditSale();
+  assert.equal(blocked.status, 409, "overdue customer is refused credit");
+  assert.match(blocked.body.error, /overdue/i);
+  assert.equal((await api("PUT", "/api/settings", { block_credit_overdue_days: "0" })).status, 200);
+
+  // updating ONE field must leave the others alone (stopping credit used to reset the limit and tier)
+  {
+    const before = (await api("GET", `/api/customers/${lpId}/account`)).body.customer;
+    assert.equal(before.credit_limit_cents, 500000, "the credit limit set at registration is intact");
+    await api("PATCH", `/api/customers/${lpId}`, { creditStopped: true });
+    await api("PATCH", `/api/customers/${lpId}`, { creditStopped: false });
+    await api("PATCH", `/api/customers/${lpId}`, { phone: "0799 000 000" });
+    const after = (await api("GET", `/api/customers/${lpId}/account`)).body.customer;
+    assert.equal(after.credit_limit_cents, 500000, "credit limit survives partial updates");
+    assert.equal(after.tier, "retail");
+    assert.equal(after.credit_days, before.credit_days, "days to pay survive partial updates");
+    assert.equal(after.phone, "0799 000 000", "the field that was sent did change");
+  }
+
+  // credit terms are editable and validated
+  assert.equal((await api("PATCH", `/api/customers/${lpId}`, { creditDays: 14 })).status, 200);
+  assert.equal((await api("GET", `/api/customers/${lpId}/account`)).body.customer.credit_days, 14);
+  assert.equal((await api("PATCH", `/api/customers/${lpId}`, { creditDays: 999 })).status, 400, "terms are capped at a year");
+
+
+  // =================== live updates ===================
+  assert.equal((await fetch(base + "/api/live")).status, 401, "the live channel needs a sign-in");
+  {
+    const topics = async () => (await api("GET", "/api/live")).body as Record<string, number>;
+    const t0 = await topics();
+    await api("PUT", "/api/settings", { receipt_footer: "Thank you" });
+    const t1 = await topics();
+    assert.ok((t1.settings ?? 0) > (t0.settings ?? 0), "a settings change bumps its topic");
+    const bad = await api("POST", "/api/sales", { items: [{ productId: nail.body.id, qtyMilli: 1000 }], payments: [{ method: "cash", amountCents: 1 }] }, cashierTok);
+    assert.equal(bad.status, 400);
+    const t2 = await topics();
+    assert.equal(t2.sales ?? 0, t1.sales ?? 0, "a failed request must not announce a change");
+    const ok = await api("POST", "/api/sales", { items: [{ productId: nail.body.id, qtyMilli: 1000 }], payments: [{ method: "cash", amountCents: 15000 }] }, cashierTok);
+    assert.equal(ok.status, 200, JSON.stringify(ok.body));
+    const t3 = await topics();
+    for (const k of ["sales", "stock", "dashboard"]) assert.ok((t3[k] ?? 0) > (t2[k] ?? 0), "a sale bumps " + k);
+    await api("GET", "/api/products?q=x");
+    const t4 = await topics();
+    assert.deepEqual(t4, t3, "reading data announces nothing");
+  }
+
+
+  // =================== suppliers and buying ===================
+  assert.equal((await api("GET", "/api/suppliers", undefined, cashierTok)).status, 403, "cashier cannot see suppliers");
+  assert.equal((await api("GET", "/api/suppliers", undefined, analystTok)).status, 403, "reports permission does not include suppliers");
+  const sup = await api("POST", "/api/suppliers", { name: "AquaBase Ltd", phone: "0711 000 111", creditDays: 30 });
+  assert.equal(sup.status, 200, JSON.stringify(sup.body));
+  const supId = sup.body.id as number;
+  assert.equal((await api("POST", "/api/suppliers", { name: "" })).status, 400, "a supplier needs a name");
+
+  // a delivery: 10 m of pipe at 200.00 and 20 kg of nails at 110.00 = 4,200.00; 1,000.00 paid on the spot
+  const pipeBefore = (await api("GET", "/api/products?q=PVC-1")).body[0];
+  const po = await api("POST", "/api/purchases", {
+    supplierId: supId, invoiceNo: "INV-77", locationId: 1, paidCents: 100000, payMethod: "cash",
+    lines: [{ productId: pipe.body.id, qtyMilli: 10000, unitCostCents: 20000 }, { productId: nail.body.id, qtyMilli: 20000, unitCostCents: 11000 }],
+  });
+  assert.equal(po.status, 200, JSON.stringify(po.body));
+  const pipeAfter = (await api("GET", "/api/products?q=PVC-1")).body[0];
+  assert.equal(pipeAfter.stock_shop, pipeBefore.stock_shop + 10000, "stock rose by the delivered quantity");
+  assert.equal((await api("GET", "/api/products?q=NAIL-3")).body[0].cost_cents, 11000, "the new buying price became the cost price");
+  let sd = await api("GET", `/api/suppliers/${supId}`);
+  assert.equal(sd.body.owed_cents, 320000, "4,200 delivered minus 1,000 paid");
+  assert.equal(sd.body.statement[0].balance_cents, 320000);
+  assert.equal(sd.body.deliveries[0].invoice_no, "INV-77");
+  assert.equal(sd.body.deliveries[0].total_cents, 420000);
+
+  // validation
+  assert.equal((await api("POST", "/api/purchases", { supplierId: supId, lines: [] })).status, 400, "a delivery needs items");
+  assert.equal((await api("POST", "/api/purchases", { supplierId: 99999, lines: [{ productId: pipe.body.id, qtyMilli: 1000, unitCostCents: 100 }] })).status, 400, "unknown supplier");
+  assert.equal((await api("POST", "/api/purchases", { supplierId: supId, paidCents: 999999, lines: [{ productId: pipe.body.id, qtyMilli: 1000, unitCostCents: 100 }] })).status, 400, "cannot pay more than the delivery");
+
+  // paying: not more than owed; a credit note reduces it too
+  assert.equal((await api("POST", `/api/suppliers/${supId}/payment`, { amountCents: 400000, method: "bank" })).status, 400, "cannot overpay");
+  assert.equal((await api("POST", `/api/suppliers/${supId}/payment`, { amountCents: 120000, method: "bank", reference: "TRX1" })).body.owed_cents, 200000);
+  assert.equal((await api("POST", `/api/suppliers/${supId}/payment`, { amountCents: 50000, method: "credit_note" })).body.owed_cents, 150000, "credit note applied");
+
+  // ageing of what we owe: KES 1,000 delivered 45 days ago and KES 500 delivered 10 days ago, 30 days to pay
+  const old = await api("POST", "/api/suppliers", { name: "Old Debt Co", creditDays: 30 });
+  convexRun("testing:addDebt", { who: "supplier", id: old.body.id, amountCents: 100000, daysAgo: 45 });
+  convexRun("testing:addDebt", { who: "supplier", id: old.body.id, amountCents: 50000, daysAgo: 10 });
+  await api("POST", `/api/suppliers/${old.body.id}/payment`, { amountCents: 30000, method: "cash" });
+  const od = await api("GET", `/api/suppliers/${old.body.id}`);
+  assert.equal(od.body.ageing.buckets.d1_30, 70000, "payment settles the oldest delivery first");
+  assert.equal(od.body.ageing.buckets.current, 50000);
+  assert.equal(od.body.ageing.overdue_cents, 70000);
+  const supList = await api("GET", "/api/suppliers");
+  const oldRow = supList.body.suppliers.find((x: any) => x.id === old.body.id);
+  assert.equal(oldRow.overdue_cents, 70000);
+  assert.equal(oldRow.max_days_overdue, 15);
+  assert.ok(supList.body.totals.owed_cents >= 150000 + 120000, "totals add up across suppliers");
+
+  // a supplier update changes only what it names
+  await api("PATCH", `/api/suppliers/${supId}`, { creditDays: 21 });
+  await api("PATCH", `/api/suppliers/${supId}`, { phone: "0712 999 999" });
+  const supAfter = (await api("GET", `/api/suppliers/${supId}`)).body.supplier;
+  assert.equal(supAfter.credit_days, 21, "days to pay were not reset by the phone update");
+  assert.equal(supAfter.phone, "0712 999 999");
+
+  // reorder list: only items WITH a reorder level, grouped by the last supplier
+  assert.equal((await api("GET", "/api/reorder")).body.some((r: any) => r.id === cement.body.id), false, "no reorder level, not listed");
+  await api("PATCH", `/api/products/${pipe.body.id}`, { reorderLevelMilli: 500000 });
+  const ro = (await api("GET", "/api/reorder")).body.find((r: any) => r.id === pipe.body.id);
+  assert.ok(ro, "pipe is below its reorder level");
+  assert.equal(ro.last_supplier, "AquaBase Ltd", "the last supplier is remembered");
+  assert.equal(ro.suggested_milli, 1000000 - ro.stock_milli, "suggest enough to reach twice the reorder level");
+  await api("PATCH", `/api/products/${pipe.body.id}`, { reorderLevelMilli: 0 });
+
+
+  // =================== selling in several units ===================
+  // copper wire is priced per metre (90.00, cost 60.00); it is also sold by the roll (50 m, special price 4,200.00) and half roll (25 m)
+  const wire = await api("POST", "/api/products", { sku: "CU-WIRE", name: "Copper wire 2.5mm", unit: "m", allowFraction: true, vatCode: "A", costCents: 6000, priceRetailCents: 9000, itemClassCode: "5010001500", qtyUnitCode: "MTR", packUnitCode: "RL" });
+  assert.equal(wire.status, 200, JSON.stringify(wire.body));
+  await api("POST", "/api/stock/receive", { productId: wire.body.id, locationId: 1, qtyMilli: 200000 });
+  const units = await api("PUT", `/api/products/${wire.body.id}/units`, { units: [
+    { name: "Roll", factor: 50, priceCents: 420000, barcode: "ROLLBC1" },
+    { name: "Half roll", factor: 25 },
+  ] });
+  assert.equal(units.status, 200, JSON.stringify(units.body));
+  const wireRow = (await api("GET", "/api/products?q=CU-WIRE")).body[0];
+  assert.equal(wireRow.units.length, 2, "the product lists its units");
+  assert.equal(wireRow.units[0].name, "Half roll", "smallest pack first");
+  assert.equal(wireRow.item_class_code, "5010001500", "tax details are stored");
+  assert.equal(wireRow.qty_unit_code, "MTR");
+  const rollId = wireRow.units.find((u: any) => u.name === "Roll").id as number;
+  const halfId = wireRow.units.find((u: any) => u.name === "Half roll").id as number;
+
+  // unit barcodes are found by search and cannot be reused
+  assert.equal((await api("GET", "/api/products?q=ROLLBC1")).body[0]?.sku, "CU-WIRE", "a pack barcode finds its product");
+  assert.equal((await api("PUT", `/api/products/${nail.body.id}/units`, { units: [{ name: "Box", factor: 10, barcode: "ROLLBC1" }] })).status, 409, "a barcode cannot belong to two units");
+  assert.equal((await api("PUT", `/api/products/${nail.body.id}/units`, { units: [{ name: "Box", factor: 10 }, { name: "box", factor: 5 }] })).status, 400, "unit names must differ");
+  assert.equal((await api("PUT", `/api/products/${nail.body.id}/units`, { units: [{ name: "Box", factor: 0 }] })).status, 400, "a unit must contain something");
+  assert.equal((await api("PUT", "/api/products/" + wire.body.id + "/units", { units: [] }, cashierTok)).status, 403, "cashier cannot change units");
+  await api("PUT", `/api/products/${nail.body.id}/units`, { units: [] });
+
+  const wireStock = async () => (await api("GET", "/api/products?q=CU-WIRE")).body[0].stock_shop as number;
+  const sellWire = (items: any[], extra: any = {}, cash = 5000000) => api("POST", "/api/sales", { items, payments: [{ method: "cash", amountCents: cash }], ...extra }, cashierTok);
+
+  // 2 rolls at the roll price = 8,400.00, and 100 m leaves stock
+  let ws = await sellWire([{ productId: wire.body.id, qtyMilli: 2000, unitId: rollId }]);
+  assert.equal(ws.status, 200, JSON.stringify(ws.body));
+  assert.equal(ws.body.total_cents, 840000, "two rolls at the roll price");
+  assert.equal(await wireStock(), 100000, "100 m left stock");
+  assert.equal(ws.body.items[0].unit, "Roll");
+  assert.equal(ws.body.items[0].unit_price_cents, 420000);
+  assert.equal(ws.body.items[0].base_qty_milli, 100000);
+  assert.equal(ws.body.items[0].cost_cents, 300000, "cost is per roll (50 x 60.00) so margins stay right");
+  const rollSaleId = ws.body.id as number;
+  const rollItemId = ws.body.items[0].id as number;
+
+  // a pack with no price of its own is the metre price times the pack size: half roll = 25 x 90.00
+  ws = await sellWire([{ productId: wire.body.id, qtyMilli: 1000, unitId: halfId }]);
+  assert.equal(ws.body.total_cents, 225000, "half roll priced from the metre price");
+  assert.equal(await wireStock(), 75000);
+
+  // loose metres still work, fractions included
+  ws = await sellWire([{ productId: wire.body.id, qtyMilli: 2500 }]);
+  assert.equal(ws.body.total_cents, 22500, "2.5 m at 90.00");
+  assert.equal(await wireStock(), 72500);
+
+  // packs are sold whole
+  assert.equal((await sellWire([{ productId: wire.body.id, qtyMilli: 1500, unitId: rollId }])).status, 400, "no 1.5 rolls");
+  // the unit has to belong to the product
+  assert.equal((await sellWire([{ productId: pipe.body.id, qtyMilli: 1000, unitId: rollId }])).status, 400, "unit of another product is refused");
+
+  // stock is checked across lines (72.5 m left): a roll plus 30 m loose is 80 m, so it must be refused and change nothing
+  assert.equal((await sellWire([{ productId: wire.body.id, qtyMilli: 1000, unitId: rollId }, { productId: wire.body.id, qtyMilli: 30000 }])).status, 409, "a roll plus loose metres is checked together");
+  assert.equal((await sellWire([{ productId: wire.body.id, qtyMilli: 1000, unitId: rollId }, { productId: wire.body.id, qtyMilli: 25000 }, { productId: wire.body.id, qtyMilli: 1000, unitId: halfId }])).status, 409, "three mixed lines are checked together");
+  assert.equal(await wireStock(), 72500, "refused sales take nothing from stock");
+
+  // a contractor (no special wire price) gets the metre price scaled to the roll, not the retail roll override
+  ws = await sellWire([{ productId: wire.body.id, qtyMilli: 1000, unitId: rollId }], { customerId: cust.body.id }, 500000);
+  assert.equal(ws.status, 200, JSON.stringify(ws.body));
+  assert.equal(ws.body.total_cents, 450000, "contractor: 50 m x 90.00, the retail roll price is for retail customers");
+  assert.equal(await wireStock(), 22500);
+
+  // refund one of the two rolls: money back at the roll price, 50 m back on the shelf
+  const stockBeforeRefund = await wireStock();
+  const rf = await api("POST", `/api/sales/${rollSaleId}/refund`, { items: [{ saleItemId: rollItemId, qtyMilli: 1000 }], method: "cash", reason: "wrong gauge", approvalPin: "1234" }, cashierTok);
+  assert.equal(rf.status, 200, JSON.stringify(rf.body));
+  assert.equal(rf.body.total_cents, -420000, "refund at the roll price");
+  assert.equal(await wireStock(), stockBeforeRefund + 50000, "a returned roll puts 50 m back");
+  // and not more than was sold
+  assert.equal((await api("POST", `/api/sales/${rollSaleId}/refund`, { items: [{ saleItemId: rollItemId, qtyMilli: 2000 }], method: "cash", reason: "x", approvalPin: "1234" }, cashierTok)).status, 400, "cannot refund more rolls than were sold");
+  assert.equal((await api("POST", `/api/sales/${rollSaleId}/refund`, { items: [{ saleItemId: rollItemId, qtyMilli: 1000 }], method: "cash", reason: "second roll", approvalPin: "1234" }, cashierTok)).status, 200, "the second roll can still come back");
+
+
+  // =================== loans: approval, accountability, and who may see the debts ===================
+  const anon = { items: [{ productId: nail.body.id, qtyMilli: 1000 }], payments: [{ method: "credit", amountCents: 15000 }] };
+  assert.equal((await api("POST", "/api/sales", anon, cashierTok)).status, 400, "credit needs a registered customer");
+  const noPin = await api("POST", "/api/sales", { ...anon, customerId: lpId }, cashierTok);
+  assert.equal(noPin.status, 403, "a cashier cannot give credit alone");
+  assert.match(noPin.body.error, /approval/i);
+  assert.equal((await api("POST", "/api/sales", { ...anon, customerId: lpId, approvalPin: "5678" }, cashierTok)).status, 403, "a cashier's own PIN is not an approval");
+  const loan = await api("POST", "/api/sales", { ...anon, customerId: lpId, approvalPin: "1234" }, cashierTok);
+  assert.equal(loan.status, 200, "an approver PIN is accepted: " + JSON.stringify(loan.body));
+  assert.equal(loan.body.approved_by, 1, "the person who approved it is recorded");
+  const trail = (await api("GET", `/api/customers/${lpId}/account`)).body.statement.find((l: any) => l.receipt_no === loan.body.receipt_no);
+  assert.equal(trail.cashier, "Wanjiru", "the statement shows who served");
+  assert.equal(trail.approver, "Admin", "and who approved the loan");
+
+  // the till sees credit available, never the debts; only managers and admins see who owes what
+  const forCashier = (await api("GET", "/api/customers", undefined, cashierTok)).body.find((c: any) => c.id === lpId);
+  assert.equal(forCashier.balance_cents, 0, "a cashier does not see balances");
+  assert.ok(forCashier.credit_available_cents >= 0 && typeof forCashier.credit_available_cents === "number", "but sees credit available");
+  assert.ok((await api("GET", "/api/customers")).body.find((c: any) => c.id === lpId).balance_cents > 0, "the admin sees the balance");
+  assert.equal((await api("GET", "/api/receivables", undefined, cashierTok)).status, 403, "debtors list is not for cashiers");
+  assert.equal((await api("GET", `/api/customers/${lpId}/account`, undefined, cashierTok)).status, 403, "an account statement is not for cashiers");
+  assert.equal((await api("GET", `/api/customers/${lpId}`, undefined, cashierTok)).status, 403);
+  assert.equal((await api("POST", "/api/customers", { name: "Walk-in Wanjala" }, cashierTok)).status, 403, "a cashier does not register customers");
+  assert.equal((await api("POST", `/api/customers/${lpId}/payment`, { amountCents: 100, method: "cash" }, cashierTok)).status, 403, "a cashier does not record repayments");
+
+  // stopping credit for a defaulter: refused even with a manager PIN, cash still welcome
+  assert.equal((await api("PATCH", `/api/customers/${lpId}`, { creditStopped: true })).status, 200);
+  const stopped = await api("POST", "/api/sales", { ...anon, customerId: lpId, approvalPin: "1234" }, cashierTok);
+  assert.equal(stopped.status, 409, "credit stopped");
+  assert.match(stopped.body.error, /stopped/i);
+  assert.equal((await api("POST", "/api/sales", { items: anon.items, customerId: lpId, payments: [{ method: "cash", amountCents: 15000 }] }, cashierTok)).status, 200, "a cash sale to the same person is fine");
+  assert.equal((await api("PATCH", `/api/customers/${lpId}`, { creditStopped: false })).status, 200);
+  assert.equal((await api("POST", "/api/sales", { ...anon, customerId: lpId, approvalPin: "1234" }, cashierTok)).status, 200, "credit is back once lifted");
+
+  // =================== logo ===================
+  assert.equal((await fetch(base + "/api/logo")).status, 404, "no logo yet");
+  assert.equal((await (await fetch(base + "/api/auth/info")).json() as any).logo_version, "", "the sign-in screen knows there is no logo");
+  const PNG = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
+  const asData = (mime: string, b64: string) => ({ dataUrl: `data:${mime};base64,${b64}` });
+  assert.equal((await api("PUT", "/api/logo", asData("image/png", PNG), cashierTok)).status, 403, "cashier cannot change the logo");
+  assert.equal((await api("PUT", "/api/logo", { dataUrl: "hello" })).status, 400, "not a data URL");
+  assert.equal((await api("PUT", "/api/logo", asData("image/svg+xml", PNG))).status, 400, "SVG is refused (it can carry scripts)");
+  assert.equal((await api("PUT", "/api/logo", asData("image/png", Buffer.from("<script>alert(1)</script>").toString("base64")))).status, 400, "text labelled as an image is refused");
+  assert.equal((await api("PUT", "/api/logo", asData("image/png", Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), Buffer.alloc(450 * 1024)]).toString("base64")))).status, 400, "too large is refused");
+  const up = await api("PUT", "/api/logo", asData("image/png", PNG));
+  assert.equal(up.status, 200, JSON.stringify(up.body));
+  const got = await fetch(base + "/api/logo");
+  assert.equal(got.status, 200, "the logo is public so the sign-in screen can show it");
+  assert.equal(got.headers.get("content-type"), "image/png");
+  assert.equal(got.headers.get("x-content-type-options"), "nosniff");
+  assert.deepEqual(Buffer.from(await got.arrayBuffer()), Buffer.from(PNG, "base64"), "the same bytes come back");
+  assert.equal((await fetch(base + "/api/logo", { headers: { "if-none-match": got.headers.get("etag")! } })).status, 304, "unchanged logos are not re-sent");
+  assert.equal(((await (await fetch(base + "/api/auth/info")).json()) as any).logo_version, up.body.version, "sign-in screen sees the new version");
+  assert.equal((await api("GET", "/api/settings")).body.logo_version, up.body.version);
+  assert.equal((await api("PUT", "/api/settings", { logo_version: "hacked" })).status, 200);
+  assert.equal((await api("GET", "/api/settings")).body.logo_version, up.body.version, "the version cannot be set through the settings form");
+  assert.equal((await api("DELETE", "/api/logo", undefined, cashierTok)).status, 403);
+  assert.equal((await api("DELETE", "/api/logo")).status, 200);
+  assert.equal((await fetch(base + "/api/logo")).status, 404, "gone after removal");
+  assert.equal((await api("GET", "/api/settings")).body.logo_version, "");
+
+  // =================== screens hosted on another address (e.g. Vercel) ===================
+  {
+    const site = "https://mazaopos.vercel.app";
+    const pre = await fetch(base + "/api/sales", { method: "OPTIONS", headers: { origin: site, "access-control-request-method": "POST", "access-control-request-headers": "authorization,content-type" } });
+    assert.ok(pre.status === 204 || pre.status === 200, "the browser pre-flight check is answered: " + pre.status);
+    assert.ok(["*", site].includes(pre.headers.get("access-control-allow-origin") ?? ""), "the hosted screens are allowed to call the API");
+    assert.match(pre.headers.get("access-control-allow-headers") ?? "", /authorization/i, "the sign-in header is allowed");
+  }
+
+  console.log("ALL CHECKS PASSED");
+} catch (e) {
+  console.error("FAILED:", e);
+  process.exitCode = 1;
+}

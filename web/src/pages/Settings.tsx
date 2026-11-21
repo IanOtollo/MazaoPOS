@@ -322,57 +322,11 @@ function Roles() {
 }
 
 // ---------------------------------------------------------------- Backup
-interface BackupInfo { folder: string; keep: number; backups: { name: string; size: number; created_at: string }[] }
-
 function Backups() {
-  const toast = useToast();
-  const [info, setInfo] = useState<BackupInfo | null>(null);
-  const [busy, setBusy] = useState(false);
-  const load = useCallback(() => get<BackupInfo>("/api/backups").then(setInfo), []);
-  useEffect(() => { load(); }, [load]);
-  useLive(["backups"], load);
-
-  const backUp = async () => {
-    setBusy(true);
-    try { await post("/api/backups"); toast({ msg: "Backup created" }); await load(); }
-    catch (e) { toast({ msg: (e as Error).message, kind: "err" }); }
-    setBusy(false);
-  };
-
-  const download = async (name: string) => {
-    try {
-      const res = await fetch(apiUrl(`/api/backups/${name}`), { headers: { authorization: `Bearer ${getToken()}` } });
-      if (!res.ok) throw new Error("Could not download the backup");
-      const url = URL.createObjectURL(await res.blob());
-      const a = document.createElement("a");
-      a.href = url; a.download = name; a.click();
-      URL.revokeObjectURL(url);
-    } catch (e) { toast({ msg: (e as Error).message, kind: "err" }); }
-  };
-
-  const fmtSize = (b: number) => (b > 1048576 ? `${(b / 1048576).toFixed(1)} MB` : `${Math.max(1, Math.round(b / 1024))} KB`);
-
   return (
     <div className="max-w-3xl">
-      <p className="text-slate-600 mb-1">A backup is a complete copy of your products, sales, stock and staff. One is made automatically every day, and the last {info?.keep ?? 30} are kept.</p>
-      <p className="text-sm text-slate-500 mb-4">They are stored on this computer{info ? ` in ${info.folder}` : ""}. Download one regularly and keep it on a flash disk or another computer, because backups on the same disk do not protect you if the disk fails.</p>
-      <Button variant="primary" onClick={backUp} disabled={busy} className="mb-4">{busy ? "Backing up" : "Back up now"}</Button>
-      <div className="bg-white border border-line rounded-xl shadow-card overflow-auto">
-        <table className="w-full">
-          <thead><tr><th className={th}>Backup</th><th className={th}>Created</th><th className={`${th} text-right`}>Size</th><th className={th}></th></tr></thead>
-          <tbody>
-            {info?.backups.map((b) => (
-              <tr key={b.name}>
-                <td className={td}>{b.name}</td>
-                <td className={td}>{new Date(b.created_at).toLocaleString("en-KE", { timeZone: "Africa/Nairobi", day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" })}</td>
-                <td className={`${td} num`}>{fmtSize(b.size)}</td>
-                <td className={`${td} text-right`}><Button onClick={() => download(b.name)} className="!py-1.5 inline-flex items-center gap-1.5"><Download className="size-4" />Download</Button></td>
-              </tr>
-            ))}
-            {info && !info.backups.length && <tr><td className={`${td} text-slate-500`} colSpan={4}>No backups yet.</td></tr>}
-          </tbody>
-        </table>
-      </div>
+      <p className="text-slate-600 mb-2">Your products, sales, stock and staff are stored safely in the cloud and every change is saved the moment it happens. There is nothing to back up by hand.</p>
+      <p className="text-sm text-slate-500">If you ever want a full copy of the data, ask your system administrator to export it from the data dashboard.</p>
     </div>
   );
 }

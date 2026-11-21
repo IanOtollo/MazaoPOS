@@ -2,7 +2,7 @@ import { useEffect, useRef, useSyncExternalStore } from "react";
 import { apiUrl, getToken } from "./api";
 
 /*
- * Client side of the live channel (see server/events.ts).
+ * Client side of the live channel (see convex/api.ts, topic counters).
  *
  * A browser allows only 6 simultaneous connections to one address, and a live stream never ends. If every
  * open tab held its own stream, a handful of tabs would use up all 6 and every normal request (loading a
@@ -28,37 +28,28 @@ const emitAll = (topics: string[]) => { emit(topics); channel?.postMessage({ top
 const announce = (v: boolean) => { setConnected(v); channel?.postMessage({ connected: v }); };
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-/** Only the leader tab runs this. */
+/** Only the leader tab runs this: ask the backend which kinds of data changed, every few seconds. */
 async function leaderLoop(my: number) {
+  let last: Record<string, number> | null = null;
   while (started && my === gen) {
     abort = new AbortController();
     try {
-      const res = await fetch(apiUrl("/api/events"), { headers: { authorization: `Bearer ${getToken()}`, accept: "text/event-stream" }, signal: abort.signal });
+      const res = await fetch(apiUrl("/api/live"), { headers: { authorization: `Bearer ${getToken()}` }, signal: abort.signal });
       if (res.status === 401) { stopLive(); return; } // signed out elsewhere
-      if (!res.ok || !res.body) throw new Error("no stream");
+      if (!res.ok) throw new Error("not reachable");
+      const now = (await res.json()) as Record<string, number>;
+      if (!connected) emitAll(["*"]); // back after a drop: re-read everything once
       announce(true);
-      // after a drop, re-read everything once so nothing that happened while we were away is missed
-      if (everConnected) emitAll(["*"]);
       everConnected = true;
-
-      const reader = res.body.getReader();
-      const dec = new TextDecoder();
-      let buf = "";
-      for (;;) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        buf += dec.decode(value, { stream: true });
-        let i: number;
-        while ((i = buf.indexOf("\n\n")) >= 0) {
-          const block = buf.slice(0, i);
-          buf = buf.slice(i + 2);
-          if (!block.includes("event: change")) continue;
-          const data = block.split("\n").find((l) => l.startsWith("data:"));
-          try { emitAll((JSON.parse(data!.slice(5)) as { topics: string[] }).topics); } catch { /* ignore a malformed block */ }
-        }
+      if (last) {
+        const changed = Object.keys(now).filter((k) => now[k] !== last![k]);
+        if (changed.length) emitAll(changed);
       }
+      last = now;
+      await sleep(3000);
+      continue;
     } catch {
-      /* dropped or aborted: fall through and reconnect */
+      /* dropped or aborted: fall through and retry */
     }
     if (my !== gen) return;
     announce(false);

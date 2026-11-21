@@ -31,6 +31,15 @@ const dispatch = httpAction(async (ctx, req) => {
     const out = (await ctx.runMutation(internal.api.handle, {
       method: req.method, path: url.pathname, query: Object.fromEntries(url.searchParams), token: auth.startsWith("Bearer ") ? auth.slice(7) : undefined, ip, body: body ?? null,
     })) as { __status?: number; error?: string } | null;
+    const bin = (out as { __binary?: { mime: string; base64: string; etag: string } } | null)?.__binary;
+    if (bin) {
+      const cache = { etag: bin.etag, "cache-control": "public, max-age=0, must-revalidate", "x-content-type-options": "nosniff", ...CORS };
+      if (req.headers.get("if-none-match") === bin.etag) return new Response(null, { status: 304, headers: cache });
+      const raw = atob(bin.base64);
+      const bytes = new Uint8Array(raw.length);
+      for (let i = 0; i < raw.length; i++) bytes[i] = raw.charCodeAt(i);
+      return new Response(bytes, { status: 200, headers: { "content-type": bin.mime, ...cache } });
+    }
     if (out && typeof out === "object" && out.__status) return json(out.__status, { error: out.error });
     return json(200, out ?? null);
   } catch (e) {
