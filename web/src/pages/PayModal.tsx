@@ -1,8 +1,8 @@
 import { useState } from "react";
 import { Banknote, BookUser, CreditCard, Landmark, Plus, Smartphone, X, type LucideIcon } from "lucide-react";
 import { fmtKES, toCents } from "../../../shared/money";
-import { post, type Customer } from "../lib/api";
-import { Button, ErrorLine, Input, Modal, NumInput } from "../lib/ui";
+import { post, useAuth, type Customer } from "../lib/api";
+import { Button, ErrorLine, Field, Input, Modal, NumInput, Select } from "../lib/ui";
 import type { SaleDoc } from "../lib/Receipt";
 
 type Method = "cash" | "mpesa" | "card" | "bank" | "credit";
@@ -28,6 +28,8 @@ export function PayModal({ total, customer, items, discount, approvalPin, onClos
   total: number; customer: Customer | null; items: { productId: number; qtyMilli: number }[]; discount: number;
   approvalPin: string; onClose: () => void; onDone: (s: SaleDoc) => void;
 }) {
+  const { can } = useAuth();
+  const [pin, setPin] = useState("");
   const [pays, setPays] = useState<Pay[]>([{ method: "cash", amount: total / 100, reference: "" }]);
   const [active, setActive] = useState(0);
   const [err, setErr] = useState("");
@@ -37,8 +39,10 @@ export function PayModal({ total, customer, items, discount, approvalPin, onClos
   const remaining = total - paid;
   const cash = pays.filter((p) => p.method === "cash").reduce((a, p) => a + toCents(p.amount ?? 0), 0);
   const change = paid > total ? paid - total : 0;
-  const canCredit = !!customer && customer.credit_limit_cents > 0;
+  const canCredit = !!customer && customer.credit_limit_cents > 0 && !customer.credit_stopped && (customer.credit_available_cents ?? 0) > 0;
   const cur = pays[active];
+  // handing over goods on loan needs a manager's say-so unless this role may do it alone
+  const needsApproval = pays.some((p) => p.method === "credit" && toCents(p.amount ?? 0) > 0) && !can("sales.credit") && !approvalPin;
 
   const patch = (i: number, p: Partial<Pay>) => setPays((x) => x.map((l, k) => (k === i ? { ...l, ...p } : l)));
   const needsRef = cur.method === "mpesa" || cur.method === "card" || cur.method === "bank";
@@ -48,10 +52,11 @@ export function PayModal({ total, customer, items, discount, approvalPin, onClos
     setErr("");
     if (remaining > 0) return setErr(`KES ${fmtKES(remaining)} still to pay`);
     if (change > cash) return setErr("Only cash can be over-tendered");
+    if (needsApproval && pin.length < 4) return setErr("Selling on account needs a manager's PIN");
     setBusy(true);
     try {
       const sale = await post<SaleDoc>("/api/sales", {
-        items, customerId: customer?.id ?? null, discountCents: discount, approvalPin: approvalPin || undefined,
+        items, customerId: customer?.id ?? null, discountCents: discount, approvalPin: pin || approvalPin || undefined,
         payments: pays.filter((p) => toCents(p.amount ?? 0) > 0)
           .map((p) => ({ method: p.method, amountCents: toCents(p.amount ?? 0), reference: p.reference || undefined })),
       });
@@ -129,6 +134,11 @@ export function PayModal({ total, customer, items, discount, approvalPin, onClos
         </div>
       </div>
 
+      {needsApproval && (
+        <div className="mt-3 border border-amber-200 bg-amber-50 rounded-lg p-3">
+          <Field label="Manager PIN to approve credit" hint="Goods on account are only given with a manager's approval."><Input type="password" inputMode="numeric" autoComplete="off" value={pin} onChange={(e) => setPin(e.target.value)} /></Field>
+        </div>
+      )}
       <div className="mt-3"><ErrorLine msg={err} /></div>
       <Button variant="primary" onClick={submit} disabled={busy || remaining > 0}
         className="w-full !py-4 !text-lg !rounded-lg mt-3">

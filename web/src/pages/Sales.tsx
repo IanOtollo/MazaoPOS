@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { fmtKES, fmtQty, toMilli } from "../../../shared/money";
 import { fmtTime, get, post, todayEAT } from "../lib/api";
 import { useAuth } from "../lib/api";
-import { Button, ErrorLine, Field, Input, Modal, NumInput, PageHead, inputCls, td, th } from "../lib/ui";
+import { Button, ErrorLine, Field, Input, Modal, NumInput, PageHead, inputCls, td, th, Select } from "../lib/ui";
 import { Receipt, type SaleDoc } from "../lib/Receipt";
 import { useLive } from "../lib/live";
 
@@ -92,7 +92,7 @@ function RefundForm({ sale, isManager, onClose, onDone }: { sale: SaleDoc & { id
         ))}
       </div>
       <div className="grid gap-3 mt-3">
-        <Field label="Refund as"><select className={inputCls} value={method} onChange={(e) => setMethod(e.target.value)}><option value="cash">Cash</option><option value="mpesa">M-Pesa</option><option value="bank">Bank</option><option value="credit">Customer account</option></select></Field>
+        <Field label="Refund as"><Select className={inputCls} value={method} onChange={(e) => setMethod(e.target.value)}><option value="cash">Cash</option><option value="mpesa">M-Pesa</option><option value="bank">Bank</option><option value="credit">Customer account</option></Select></Field>
         <Field label="Reason"><Input value={reason} onChange={(e) => setReason(e.target.value)} /></Field>
         <label className="flex items-center gap-2"><input type="checkbox" checked={restock} onChange={(e) => setRestock(e.target.checked)} /> Return items to stock (untick if damaged)</label>
         {!isManager && <Field label="Manager PIN"><Input type="password" inputMode="numeric" value={pin} onChange={(e) => setPin(e.target.value)} /></Field>}

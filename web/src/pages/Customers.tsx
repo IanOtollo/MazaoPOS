@@ -5,20 +5,20 @@ import { fmtTime, get, patch, post, useAuth, type Customer } from "../lib/api";
 import { fmtDay } from "../lib/range";
 import { useToast } from "../lib/toast";
 import { useLive } from "../lib/live";
-import { Button, EmptyState, ErrorLine, Field, Input, Modal, NumInput, PageHead, inputCls, td, th } from "../lib/ui";
+import { Button, EmptyState, ErrorLine, Field, Input, Modal, NumInput, PageHead, inputCls, td, th, Select } from "../lib/ui";
 
 export type Buckets = { current: number; d1_30: number; d31_60: number; d61_90: number; d90plus: number };
 interface RecRow {
   id: number; name: string; phone: string | null; tier: string; credit_limit_cents: number; credit_days: number;
-  balance_cents: number; overdue_cents: number; max_days_overdue: number; last_payment_at: string | null;
+  balance_cents: number; overdue_cents: number; max_days_overdue: number; last_payment_at: string | null; credit_stopped: number;
   next_promise: { date: string; cents: number | null } | null; promise_broken: boolean;
 }
 interface Rec { totals: { owed_cents: number; overdue_cents: number; customers: number; overdue_customers: number; buckets: Buckets }; customers: RecRow[] }
 interface Account {
-  customer: { id: number; name: string; phone: string | null; kra_pin: string | null; tier: string; credit_limit_cents: number; credit_days: number };
+  customer: { id: number; name: string; phone: string | null; kra_pin: string | null; tier: string; credit_limit_cents: number; credit_days: number; credit_stopped: number };
   balance_cents: number;
   ageing: { balance_cents: number; items: { ledger_id: number; date: string; due: string; amount_cents: number; receipt_no: string | null; days_overdue: number }[]; buckets: Buckets; overdue_cents: number; max_days_overdue: number };
-  statement: { id: number; amount_cents: number; type: string; method: string | null; note: string | null; created_at: string; receipt_no: string | null; balance_cents: number }[];
+  statement: { id: number; amount_cents: number; type: string; method: string | null; note: string | null; created_at: string; receipt_no: string | null; cashier: string | null; approver: string | null; balance_cents: number }[];
   notes: { id: number; kind: string; body: string; promise_date: string | null; promise_cents: number | null; created_at: string; user: string | null }[];
 }
 
@@ -51,11 +51,11 @@ export default function Customers() {
     <div className="p-4 sm:p-6 max-w-6xl">
       <PageHead title="Customers">
         <Input placeholder="Search name or phone" value={q} onChange={(e) => setQ(e.target.value)} className="!w-56 sm:!w-64" />
-        {can("customers.create") && <Button variant="primary" onClick={() => setEdit("new")} className="flex items-center gap-1.5"><Plus className="size-4" />Add customer</Button>}
+        {can("customers.create") && <Button variant="primary" onClick={() => setEdit("new")} className="flex items-center gap-1.5"><Plus className="size-4" />Register customer</Button>}
       </PageHead>
 
       <div className="inline-flex rounded-lg border border-slate-300 bg-white p-0.5 mb-4" role="tablist" aria-label="Show">
-        {([["all", "All"], ["owing", `Owing${rec?.totals.customers ? ` (${rec.totals.customers})` : ""}`], ["overdue", `Overdue${rec?.totals.overdue_customers ? ` (${rec.totals.overdue_customers})` : ""}`]] as [View, string][]).map(([id, label]) => (
+        {([["all", "All"], ["owing", `Owing${rec?.totals.customers ? ` (${rec.totals.customers})` : ""}`], ["overdue", `Defaulters${rec?.totals.overdue_customers ? ` (${rec.totals.overdue_customers})` : ""}`]] as [View, string][]).map(([id, label]) => (
           <button key={id} role="tab" aria-selected={view === id} onClick={() => setView(id)}
             className={`px-3.5 py-1.5 rounded-md text-sm font-semibold transition-colors ${view === id ? "bg-slate-900 text-white" : "text-slate-600 hover:bg-slate-100"}`}>{label}</button>
         ))}
@@ -78,13 +78,13 @@ export default function Customers() {
             <tbody>
               {all.map((c) => (
                 <tr key={c.id} className="cursor-pointer hover:bg-slate-50" onClick={() => setOpen(c.id)}>
-                  <td className={td}><div className="font-medium">{c.name}</div><div className="text-xs text-slate-500">{c.phone}</div></td>
+                  <td className={td}><div className="font-medium">{c.name}{!!c.credit_stopped && <span className="ml-2 rounded-full px-2 py-0.5 text-xs font-bold bg-slate-800 text-white">Credit stopped</span>}</div><div className="text-xs text-slate-500">{c.phone}</div></td>
                   <td className={`${td} capitalize hidden sm:table-cell`}>{c.tier}</td>
                   <td className={`${td} num hidden md:table-cell`}>{c.credit_limit_cents ? fmtKES(c.credit_limit_cents) : "-"}</td>
                   <td className={`${td} num ${c.balance_cents > 0 ? "font-semibold" : "text-slate-400"}`}>{c.balance_cents > 0 ? fmtKES(c.balance_cents) : "-"}</td>
                 </tr>
               ))}
-              {!all.length && <tr><td colSpan={4}><EmptyState icon={<Phone className="size-8" />} title={q ? "No customers match" : "No customers yet"} hint={q ? undefined : "Add customers to sell on credit and track what they owe."} /></td></tr>}
+              {!all.length && <tr><td colSpan={4}><EmptyState icon={<Phone className="size-8" />} title={q ? "No customers match" : "No customers registered yet"} hint={q ? undefined : "Only people who buy on credit or get special prices are registered here. Walk-in customers need no record. Set how much someone may borrow and how long they have to pay, and the system tracks what they owe."} /></td></tr>}
             </tbody>
           </table>
         ) : (
@@ -101,13 +101,14 @@ export default function Customers() {
                         ? <span className={`rounded-full px-2 py-0.5 text-xs font-bold ${c.max_days_overdue > 30 ? "bg-red-100 text-red-700" : "bg-amber-100 text-amber-800"}`}>{c.max_days_overdue} days late</span>
                         : <span className="rounded-full px-2 py-0.5 text-xs font-bold bg-slate-100 text-slate-600">Not due yet</span>}
                       {c.promise_broken && <span className="rounded-full px-2 py-0.5 text-xs font-bold bg-red-100 text-red-700">Promise missed</span>}
+                      {!!c.credit_stopped && <span className="rounded-full px-2 py-0.5 text-xs font-bold bg-slate-800 text-white">Credit stopped</span>}
                       {c.next_promise && <span className="rounded-full px-2 py-0.5 text-xs font-bold bg-blue-50 text-blue-700">Promised {fmtDay(c.next_promise.date)}</span>}
                     </div>
                   </td>
                   <td className={`${td} text-slate-500 hidden md:table-cell`}>{c.last_payment_at ? fmtTime(c.last_payment_at) : "never"}</td>
                 </tr>
               ))}
-              {!shown.length && <tr><td colSpan={4}><EmptyState icon={<Phone className="size-8" />} title={view === "overdue" ? "Nobody is overdue" : "Nobody owes you anything"} hint="Customers appear here when they take goods on credit." /></td></tr>}
+              {!shown.length && <tr><td colSpan={4}><EmptyState icon={<Phone className="size-8" />} title={view === "overdue" ? "No defaulters" : "Nobody owes you anything"} hint="Customers appear here when they take goods on credit." /></td></tr>}
             </tbody>
           </table>
         )}
@@ -150,29 +151,29 @@ function CustomerForm({ c, onClose, onSaved }: { c: Customer | null; onClose: ()
   const toast = useToast();
   const mgr = can("customers.manage");
   const [f, setF] = useState({
-    name: c?.name ?? "", phone: c?.phone ?? "", kra: c?.kra_pin ?? "", tier: c?.tier ?? "retail",
+    name: c?.name ?? "", phone: c?.phone ?? "", tier: c?.tier ?? "retail", stopped: !!c?.credit_stopped,
     limit: c ? c.credit_limit_cents / 100 : (null as number | null), days: c?.credit_days ?? 30,
   });
   const [err, setErr] = useState("");
   const save = async () => {
     if (!f.name.trim()) return setErr("Name is required");
-    const body = { name: f.name.trim(), phone: f.phone || null, kraPin: f.kra || null, tier: f.tier, creditLimitCents: toCents(f.limit ?? 0), creditDays: f.days };
+    const body = { name: f.name.trim(), phone: f.phone || null, tier: f.tier, creditLimitCents: toCents(f.limit ?? 0), creditDays: f.days, ...(mgr ? { creditStopped: f.stopped } : {}) };
     try { if (c) await patch(`/api/customers/${c.id}`, body); else await post("/api/customers", body); toast({ msg: c ? "Customer updated" : "Customer added" }); onSaved(); }
     catch (e) { setErr((e as Error).message); }
   };
   return (
-    <Modal title={c ? "Edit customer" : "Add customer"} onClose={onClose}>
+    <Modal title={c ? "Edit customer" : "Register customer"} onClose={onClose}>
       <div className="space-y-4">
         <Field label="Name"><Input value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} autoFocus /></Field>
         <Field label="Phone"><Input value={f.phone} onChange={(e) => setF({ ...f, phone: e.target.value })} /></Field>
-        <Field label="KRA PIN" hint="Needed on tax invoices for businesses"><Input value={f.kra} onChange={(e) => setF({ ...f, kra: e.target.value.toUpperCase() })} /></Field>
         {mgr && (
           <>
-            <Field label="Price tier"><select className={inputCls} value={f.tier} onChange={(e) => setF({ ...f, tier: e.target.value as Customer["tier"] })}><option value="retail">Retail</option><option value="contractor">Contractor</option><option value="wholesale">Wholesale</option></select></Field>
+            <Field label="Price tier"><Select className={inputCls} value={f.tier} onChange={(e) => setF({ ...f, tier: e.target.value as Customer["tier"] })}><option value="retail">Retail</option><option value="contractor">Contractor</option><option value="wholesale">Wholesale</option></Select></Field>
             <div className="grid grid-cols-2 gap-3">
               <Field label="Credit limit (KES)" hint="0 means no credit"><NumInput value={f.limit} onChange={(n) => setF({ ...f, limit: n })} /></Field>
               <Field label="Days to pay" hint="Debts are late after this"><NumInput value={f.days} onChange={(n) => setF({ ...f, days: Math.min(365, Math.round(n ?? 0)) })} /></Field>
             </div>
+            <label className="flex items-start gap-2"><input type="checkbox" className="mt-1" checked={f.stopped} onChange={(e) => setF({ ...f, stopped: e.target.checked })} /><span><span className="font-medium">Stop giving this person credit</span><span className="block text-sm text-slate-500">They can still pay cash and pay off what they owe.</span></span></label>
           </>
         )}
         <ErrorLine msg={err} />
@@ -292,7 +293,7 @@ function StatementTable({ lines }: { lines: Account["statement"] }) {
           {lines.map((l) => (
             <tr key={l.id}>
               <td className={`${td} whitespace-nowrap`}>{fmtTime(l.created_at)}</td>
-              <td className={td}>{describe(l)}</td>
+              <td className={td}>{describe(l)}{l.type === "credit_sale" && (l.cashier || l.approver) && <div className="text-xs text-slate-500">{[l.cashier && `served by ${l.cashier}`, l.approver && `approved by ${l.approver}`].filter(Boolean).join(", ")}</div>}</td>
               <td className={`${td} num ${l.amount_cents < 0 ? "text-ok" : ""}`}>{fmtKES(l.amount_cents)}</td>
               <td className={`${td} num font-medium`}>{fmtKES(l.balance_cents)}</td>
             </tr>
@@ -317,7 +318,7 @@ function PayForm({ id, max, onDone }: { id: number; max: number; onDone: () => v
     <div className="border border-line rounded-lg p-3 mb-4 bg-slate-50">
       <div className="grid sm:grid-cols-[1fr_9rem_1fr_auto] gap-3 items-end">
         <Field label="Amount received (KES)"><NumInput value={amt} onChange={setAmt} autoFocus placeholder={fmtKES(max)} /></Field>
-        <Field label="Paid by"><select className={inputCls} value={method} onChange={(e) => setMethod(e.target.value)}><option value="cash">Cash</option><option value="mpesa">M-Pesa</option><option value="bank">Bank</option><option value="card">Card</option></select></Field>
+        <Field label="Paid by"><Select className={inputCls} value={method} onChange={(e) => setMethod(e.target.value)}><option value="cash">Cash</option><option value="mpesa">M-Pesa</option><option value="bank">Bank</option><option value="card">Card</option></Select></Field>
         <Field label="Reference"><Input value={ref} onChange={(e) => setRef(e.target.value.toUpperCase())} placeholder={method === "mpesa" ? "M-Pesa code" : "optional"} /></Field>
         <Button variant="primary" onClick={go}>Save</Button>
       </div>
@@ -343,7 +344,7 @@ function FollowUps({ id, notes, canLog, onLogged }: { id: number; notes: Account
       {canLog && (
         <div className="border border-line rounded-lg p-3 mb-4 bg-slate-50 space-y-3">
           <div className="grid sm:grid-cols-[10rem_1fr] gap-3">
-            <Field label="Type"><select className={inputCls} value={kind} onChange={(e) => setKind(e.target.value)}><option value="call">Phone call</option><option value="visit">Visit</option><option value="note">Note</option><option value="promise">Promise to pay</option></select></Field>
+            <Field label="Type"><Select className={inputCls} value={kind} onChange={(e) => setKind(e.target.value)}><option value="call">Phone call</option><option value="visit">Visit</option><option value="note">Note</option><option value="promise">Promise to pay</option></Select></Field>
             <Field label={kind === "promise" ? "What they said (optional)" : "What happened"}><Input value={body} onChange={(e) => setBody(e.target.value)} placeholder={kind === "call" ? "e.g. Phoned, will pay on Friday" : ""} /></Field>
           </div>
           {kind === "promise" && (

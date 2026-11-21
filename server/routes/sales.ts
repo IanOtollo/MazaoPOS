@@ -10,7 +10,7 @@ interface ProductRow {
   id: number; name: string; unit: string; allow_fraction: number; vat_code: VatCode; cost_cents: number;
   price_retail_cents: number; price_contractor_cents: number | null; price_wholesale_cents: number | null; active: number;
 }
-interface CustomerRow { id: number; tier: "retail" | "contractor" | "wholesale"; credit_limit_cents: number; credit_days: number; active: number }
+interface CustomerRow { id: number; tier: "retail" | "contractor" | "wholesale"; credit_limit_cents: number; credit_days: number; credit_stopped: number; active: number }
 
 const customerBalance = (id: number) =>
   (db.prepare("SELECT COALESCE(SUM(amount_cents),0) AS b FROM customer_ledger WHERE customer_id=?").get(id) as { b: number }).b;
@@ -109,7 +109,7 @@ export function salesRoutes(app: FastifyInstance) {
 
   // ---------------- checkout ----------------
   const checkoutSchema = z.object({
-    items: z.array(z.object({ productId: z.number().int(), qtyMilli: z.number().int().positive() })).min(1),
+    items: z.array(z.object({ productId: z.number().int(), qtyMilli: z.number().int().positive(), unitId: z.number().int().nullish() })).min(1),
     customerId: z.number().int().nullish(),
     discountCents: z.number().int().min(0).default(0),
     locationId: z.number().int().default(1),
@@ -139,22 +139,43 @@ export function salesRoutes(app: FastifyInstance) {
       if (b.customerId && !customer) throw new HttpError(400, "Customer not found");
       const tier = customer?.tier ?? "retail";
 
-      // merge duplicate lines, load authoritative product data
-      const merged = new Map<number, number>();
-      for (const it of b.items) merged.set(it.productId, (merged.get(it.productId) ?? 0) + it.qtyMilli);
-      const lines = [...merged].map(([productId, qtyMilli]) => {
+      // merge duplicate lines (same product in the same unit), load authoritative product data
+      const merged = new Map<string, { productId: number; unitId: number | null; qtyMilli: number }>();
+      for (const it of b.items) {
+        const key = `${it.productId}:${it.unitId ?? 0}`;
+        const cur = merged.get(key);
+        if (cur) cur.qtyMilli += it.qtyMilli;
+        else merged.set(key, { productId: it.productId, unitId: it.unitId ?? null, qtyMilli: it.qtyMilli });
+      }
+      const lines = [...merged.values()].map(({ productId, unitId, qtyMilli }) => {
         const p = db.prepare("SELECT * FROM products WHERE id=?").get(productId) as ProductRow | undefined;
         if (!p || !p.active) throw new HttpError(400, "A product in the cart is no longer available");
-        if (!p.allow_fraction && qtyMilli % 1000 !== 0) throw new HttpError(400, `${p.name} cannot be sold in fractions`);
-        if (getSetting("allow_negative_stock") !== "1" && stockOnHand(p.id, b.locationId) < qtyMilli)
-          throw new HttpError(409, `Not enough stock for ${p.name}`);
-        const unit = priceFor(p, tier);
-        return { p, qtyMilli, unit, gross: lineTotal(unit, qtyMilli) };
+        const u = unitId
+          ? (db.prepare("SELECT * FROM product_units WHERE id=? AND product_id=?").get(unitId, productId) as { id: number; name: string; factor_milli: number; price_cents: number | null } | undefined)
+          : undefined;
+        if (unitId && !u) throw new HttpError(400, `${p.name}: that unit is no longer available`);
+        // a pack (roll, dozen, box) is sold whole; only the product's own unit may be fractional
+        if ((u || !p.allow_fraction) && qtyMilli % 1000 !== 0) throw new HttpError(400, `${p.name} cannot be sold in fractions`);
+        const factor = u?.factor_milli ?? 1000;
+        const baseQty = Math.round((qtyMilli * factor) / 1000); // what leaves stock, in the product's own unit
+        const basePrice = priceFor(p, tier);
+        // a price set on the unit applies to retail customers; other tiers get their own price scaled to the pack
+        const unitPrice = u ? (u.price_cents != null && tier === "retail" ? u.price_cents : Math.round((basePrice * factor) / 1000)) : basePrice;
+        return { p, u, qtyMilli, baseQty, unit: unitPrice, unitCost: Math.round((p.cost_cents * factor) / 1000), gross: lineTotal(unitPrice, qtyMilli) };
       });
+      // stock is checked per product across all its lines, so selling a roll and loose metres together cannot oversell
+      if (getSetting("allow_negative_stock") !== "1") {
+        const want = new Map<number, number>();
+        for (const l of lines) want.set(l.p.id, (want.get(l.p.id) ?? 0) + l.baseQty);
+        for (const [pid, qty] of want) {
+          if (stockOnHand(pid, b.locationId) < qty) throw new HttpError(409, `Not enough stock for ${lines.find((l) => l.p.id === pid)!.p.name}`);
+        }
+      }
 
       const subtotal = lines.reduce((a, l) => a + l.gross, 0);
       if (b.discountCents > subtotal) throw new HttpError(400, "Discount exceeds the sale total");
       let approver = null as { id: number } | null;
+      let creditApprover = null as { id: number } | null;
       if (b.discountCents > 0) approver = resolveApprover(user, "sales.discount", b.approvalPin);
 
       const shares = allocate(b.discountCents, lines.map((l) => l.gross));
@@ -169,6 +190,9 @@ export function salesRoutes(app: FastifyInstance) {
       const creditAmt = b.payments.filter((p) => p.method === "credit").reduce((a, p) => a + p.amountCents, 0);
       if (creditAmt > 0) {
         if (!customer) throw new HttpError(400, "Select a customer for credit sales");
+        // giving goods on loan is the costly mistake: staff need a manager's PIN unless their role allows it
+        creditApprover = resolveApprover(user, "sales.credit", b.approvalPin);
+        if (customer.credit_stopped) throw new HttpError(409, "Credit has been stopped for this customer. They need to pay what they owe first.");
         if (customerBalance(customer.id) + creditAmt > customer.credit_limit_cents)
           throw new HttpError(409, "Credit limit exceeded");
         // optional rule: no more credit for customers who are badly overdue
@@ -186,12 +210,12 @@ export function salesRoutes(app: FastifyInstance) {
           `INSERT INTO sales (receipt_no,shift_id,user_id,customer_id,location_id,kind,subtotal_cents,discount_cents,
              total_cents,vat_cents,note,approved_by) VALUES (?,?,?,?,?,'sale',?,?,?,?,?,?)`,
         )
-        .run(receiptNo, shift.id, user.id, customer?.id ?? null, b.locationId, subtotal, b.discountCents, total, vatTotal, b.note ?? null, approver?.id ?? null);
+        .run(receiptNo, shift.id, user.id, customer?.id ?? null, b.locationId, subtotal, b.discountCents, total, vatTotal, b.note ?? null, (creditApprover ?? approver)?.id ?? null);
       const id = Number(sale.lastInsertRowid);
 
       const insItem = db.prepare(
-        `INSERT INTO sale_items (sale_id,product_id,name,unit,qty_milli,unit_price_cents,cost_cents,vat_code,line_total_cents,vat_cents)
-         VALUES (?,?,?,?,?,?,?,?,?,?)`,
+        `INSERT INTO sale_items (sale_id,product_id,name,unit,qty_milli,unit_price_cents,cost_cents,vat_code,line_total_cents,vat_cents,base_qty_milli)
+         VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
       );
       const insMove = db.prepare(
         `INSERT INTO stock_movements (product_id,location_id,qty_milli,type,ref_type,ref_id,unit_cost_cents,user_id)
@@ -199,8 +223,8 @@ export function salesRoutes(app: FastifyInstance) {
       );
       lines.forEach((l, i) => {
         const net = l.gross - shares[i];
-        insItem.run(id, l.p.id, l.p.name, l.p.unit, l.qtyMilli, l.unit, l.p.cost_cents, l.p.vat_code, net, vatOfGross(net, l.p.vat_code));
-        insMove.run(l.p.id, b.locationId, -l.qtyMilli, id, l.p.cost_cents, user.id);
+        insItem.run(id, l.p.id, l.p.name, l.u?.name ?? l.p.unit, l.qtyMilli, l.unit, l.unitCost, l.p.vat_code, net, vatOfGross(net, l.p.vat_code), l.baseQty);
+        insMove.run(l.p.id, b.locationId, -l.baseQty, id, l.p.cost_cents, user.id);
       });
 
       // record cash net of change so the drawer reconciles
@@ -253,23 +277,25 @@ export function salesRoutes(app: FastifyInstance) {
       let total = 0, vat = 0;
       const rows = b.items.map((it) => {
         const si = db.prepare("SELECT * FROM sale_items WHERE id=? AND sale_id=?").get(it.saleItemId, origId) as
-          | { id: number; product_id: number; name: string; unit: string; qty_milli: number; unit_price_cents: number; cost_cents: number; vat_code: VatCode; line_total_cents: number }
+          | { id: number; product_id: number; name: string; unit: string; qty_milli: number; unit_price_cents: number; cost_cents: number; vat_code: VatCode; line_total_cents: number; base_qty_milli: number | null }
           | undefined;
         if (!si) throw new HttpError(400, "Item does not belong to this sale");
         const already = (
           db
             .prepare(
               `SELECT COALESCE(SUM(ri.qty_milli),0) AS q FROM sale_items ri JOIN sales r ON r.id=ri.sale_id
-               WHERE r.refund_of=? AND ri.product_id=?`,
+               WHERE r.refund_of=? AND ri.product_id=? AND ri.unit=?`,
             )
-            .get(origId, si.product_id) as { q: number }
+            .get(origId, si.product_id, si.unit) as { q: number }
         ).q;
         if (-already + it.qtyMilli > si.qty_milli) throw new HttpError(400, `${si.name}: refund exceeds quantity sold`);
         // refund at the amount actually charged (after any discount share)
         const gross = Math.round((si.line_total_cents * it.qtyMilli) / si.qty_milli);
         const v = vatOfGross(gross, si.vat_code);
         total += gross; vat += v;
-        return { si, qty: it.qtyMilli, gross, v };
+        // what goes back on the shelf, in the product's own unit (a returned roll is 50 metres)
+        const base = Math.round(((si.base_qty_milli ?? si.qty_milli) * it.qtyMilli) / si.qty_milli);
+        return { si, qty: it.qtyMilli, gross, v, base };
       });
 
       const receiptNo = nextReceiptNo();
@@ -282,14 +308,14 @@ export function salesRoutes(app: FastifyInstance) {
       const id = Number(r.lastInsertRowid);
       for (const x of rows) {
         db.prepare(
-          `INSERT INTO sale_items (sale_id,product_id,name,unit,qty_milli,unit_price_cents,cost_cents,vat_code,line_total_cents,vat_cents)
-           VALUES (?,?,?,?,?,?,?,?,?,?)`,
-        ).run(id, x.si.product_id, x.si.name, x.si.unit, -x.qty, x.si.unit_price_cents, x.si.cost_cents, x.si.vat_code, -x.gross, -x.v);
+          `INSERT INTO sale_items (sale_id,product_id,name,unit,qty_milli,unit_price_cents,cost_cents,vat_code,line_total_cents,vat_cents,base_qty_milli)
+           VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
+        ).run(id, x.si.product_id, x.si.name, x.si.unit, -x.qty, x.si.unit_price_cents, x.si.cost_cents, x.si.vat_code, -x.gross, -x.v, -x.base);
         if (b.restock)
           db.prepare(
             `INSERT INTO stock_movements (product_id,location_id,qty_milli,type,ref_type,ref_id,unit_cost_cents,user_id)
              VALUES (?,?,?,'sale_return','sale',?,?,?)`,
-          ).run(x.si.product_id, orig.location_id, x.qty, id, x.si.cost_cents, user.id);
+          ).run(x.si.product_id, orig.location_id, x.base, id, Math.round((x.si.cost_cents * x.si.qty_milli) / (x.si.base_qty_milli ?? x.si.qty_milli)), user.id);
       }
       db.prepare("INSERT INTO payments (sale_id,method,amount_cents) VALUES (?,?,?)").run(id, b.method, -total);
       if (b.method === "credit")
@@ -333,12 +359,18 @@ export function salesRoutes(app: FastifyInstance) {
   // ---------------- customers ----------------
   app.get("/api/customers", { preHandler: requireLogin() }, async (req) => {
     const { q } = req.query as { q?: string };
-    return db
+    const rows = db
       .prepare(
         `SELECT c.*, COALESCE((SELECT SUM(amount_cents) FROM customer_ledger WHERE customer_id=c.id),0) AS balance_cents
          FROM customers c WHERE c.active=1 ${q ? "AND (c.name LIKE ? OR c.phone LIKE ?)" : ""} ORDER BY c.name LIMIT 200`,
       )
-      .all(...(q ? [`%${q}%`, `%${q}%`] : []));
+      .all(...(q ? [`%${q}%`, `%${q}%`] : [])) as unknown as { balance_cents: number; credit_limit_cents: number }[];
+    const mgr = can(req.user!, "customers.manage");
+    return rows.map((r) => ({
+      ...r,
+      credit_available_cents: Math.max(0, r.credit_limit_cents - Math.max(0, r.balance_cents)),
+      balance_cents: mgr ? r.balance_cents : 0, // a cashier does not see who owes what
+    }));
   });
 
   const customerSchema = z.object({
@@ -348,6 +380,19 @@ export function salesRoutes(app: FastifyInstance) {
     tier: z.enum(["retail", "contractor", "wholesale"]).default("retail"),
     creditLimitCents: z.number().int().min(0).default(0),
     creditDays: z.number().int().min(0).max(365).default(30),
+    creditStopped: z.boolean().optional(),
+  });
+
+  // for PATCH: no defaults, so a field that is not sent is left exactly as it was
+  const customerPatch = z.object({
+    name: z.string().trim().min(1).optional(),
+    phone: z.string().nullish(),
+    kraPin: z.string().nullish(),
+    tier: z.enum(["retail", "contractor", "wholesale"]).optional(),
+    creditLimitCents: z.number().int().min(0).optional(),
+    creditDays: z.number().int().min(0).max(365).optional(),
+    creditStopped: z.boolean().optional(),
+    active: z.boolean().optional(),
   });
 
   app.post("/api/customers", { preHandler: requirePerm("customers.create") }, async (req) => {
@@ -356,24 +401,25 @@ export function salesRoutes(app: FastifyInstance) {
     if ((b.creditLimitCents > 0 || b.tier !== "retail") && !can(req.user!, "customers.manage"))
       throw new HttpError(403, "Your role cannot set a price tier or credit limit");
     const r = db
-      .prepare("INSERT INTO customers (name,phone,kra_pin,tier,credit_limit_cents,credit_days) VALUES (?,?,?,?,?,?)")
-      .run(b.name, b.phone ?? null, b.kraPin ?? null, b.tier, b.creditLimitCents, b.creditDays);
+      .prepare("INSERT INTO customers (name,phone,kra_pin,tier,credit_limit_cents,credit_days,credit_stopped) VALUES (?,?,?,?,?,?,?)")
+      .run(b.name, b.phone ?? null, b.kraPin ?? null, b.tier, b.creditLimitCents, b.creditDays, b.creditStopped ? 1 : 0);
     audit(req.user!.id, "customer_create", { name: b.name });
     return { id: Number(r.lastInsertRowid) };
   });
 
   app.patch("/api/customers/:id", { preHandler: requirePerm("customers.manage") }, async (req) => {
     const id = Number((req.params as { id: string }).id);
-    const b = parse(customerSchema.partial().extend({ active: z.boolean().optional() }), req.body);
+    const b = parse(customerPatch, req.body);
     const cur = db.prepare("SELECT * FROM customers WHERE id=?").get(id) as Record<string, unknown> | undefined;
     if (!cur) throw new HttpError(404, "Customer not found");
-    db.prepare("UPDATE customers SET name=?,phone=?,kra_pin=?,tier=?,credit_limit_cents=?,credit_days=?,active=? WHERE id=?").run(
+    db.prepare("UPDATE customers SET name=?,phone=?,kra_pin=?,tier=?,credit_limit_cents=?,credit_days=?,credit_stopped=?,active=? WHERE id=?").run(
       b.name ?? (cur.name as string),
       (b.phone === undefined ? cur.phone : b.phone) as string | null,
       (b.kraPin === undefined ? cur.kra_pin : b.kraPin) as string | null,
       b.tier ?? (cur.tier as string),
       b.creditLimitCents ?? (cur.credit_limit_cents as number),
       b.creditDays ?? (cur.credit_days as number),
+      b.creditStopped === undefined ? (cur.credit_stopped as number) : b.creditStopped ? 1 : 0,
       b.active === undefined ? (cur.active as number) : b.active ? 1 : 0,
       id,
     );
@@ -381,7 +427,7 @@ export function salesRoutes(app: FastifyInstance) {
     return { ok: true };
   });
 
-  app.get("/api/customers/:id", { preHandler: requireLogin() }, async (req) => {
+  app.get("/api/customers/:id", { preHandler: requirePerm("customers.manage") }, async (req) => {
     const id = Number((req.params as { id: string }).id);
     const c = db.prepare("SELECT * FROM customers WHERE id=?").get(id);
     if (!c) throw new HttpError(404, "Customer not found");

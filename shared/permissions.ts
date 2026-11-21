@@ -7,6 +7,7 @@ export const PERMISSIONS = [
   { key: "sales.view_all", group: "Selling", label: "View everyone's sales", hint: "Without this, a user only sees the sales they made themselves." },
   { key: "sales.discount", group: "Selling", label: "Give discounts without approval", hint: "Without this, a manager PIN is needed for every discount." },
   { key: "sales.refund", group: "Selling", label: "Process refunds without approval", hint: "Without this, a manager PIN is needed for every refund." },
+  { key: "sales.credit", group: "Selling", label: "Sell on credit without approval", hint: "Without this, a manager PIN is needed every time goods are given on account." },
   { key: "sales.approve", group: "Selling", label: "Approve discounts and refunds for others", hint: "Lets this user's PIN authorise a discount or refund at someone else's till." },
   // Products and stock
   { key: "products.view_cost", group: "Products & stock", label: "See cost prices and profit", hint: "Buying prices and margins are hidden from users without this." },
@@ -47,6 +48,6 @@ export const DEFAULT_ROLES: { name: string; description: string; isSystem: boole
     name: "Cashier",
     description: "Serves customers at the till.",
     isSystem: false,
-    permissions: ["sales.create", "customers.create", "customers.payment"],
+    permissions: ["sales.create"],
   },
 ];

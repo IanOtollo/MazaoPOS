@@ -1,4 +1,5 @@
-import { useEffect, useState, type ButtonHTMLAttributes, type ComponentProps, type InputHTMLAttributes, type ReactNode } from "react";
+import { Children, isValidElement, useEffect, useRef, useState, type ButtonHTMLAttributes, type ComponentProps, type InputHTMLAttributes, type ReactElement, type ReactNode } from "react";
+import { Check, ChevronDown } from "lucide-react";
 
 export function Button({ variant = "default", className = "", ...p }: ButtonHTMLAttributes<HTMLButtonElement> & { variant?: "default" | "primary" | "danger" }) {
   const v = {
@@ -81,6 +82,78 @@ export function EmptyState({ icon, title, hint, children }: { icon: ReactNode; t
       <p className="font-semibold text-slate-700 text-lg mt-1">{title}</p>
       {hint && <p className="text-sm text-slate-500 max-w-sm">{hint}</p>}
       {children && <div className="mt-3">{children}</div>}
+    </div>
+  );
+}
+
+interface Opt { value: string; label: ReactNode; disabled?: boolean }
+function collectOptions(children: ReactNode, out: Opt[] = []): Opt[] {
+  Children.forEach(children, (c) => {
+    if (!isValidElement(c)) return;
+    const el = c as ReactElement<{ value?: string | number; children?: ReactNode; disabled?: boolean }>;
+    if (el.type === "option") out.push({ value: String(el.props.value ?? el.props.children ?? ""), label: el.props.children, disabled: el.props.disabled });
+    else if (el.props.children) collectOptions(el.props.children, out);
+  });
+  return out;
+}
+
+/**
+ * A styled dropdown. It is used exactly like a native <select> (same <option> children, same e.target.value),
+ * but looks the same everywhere, works with the keyboard, and never opens the operating system's own menu.
+ */
+export function Select({ value, onChange, children, disabled, placeholder, "aria-label": ariaLabel }: {
+  value: string | number; onChange: (e: { target: { value: string } }) => void; children: ReactNode;
+  disabled?: boolean; placeholder?: string; "aria-label"?: string;
+  className?: string; // accepted so a native <select> can be swapped in unchanged; the dropdown styles itself
+}) {
+  const options = collectOptions(children);
+  const [open, setOpen] = useState(false);
+  const [active, setActive] = useState(0);
+  const box = useRef<HTMLDivElement>(null);
+  const cur = options.find((o) => o.value === String(value));
+
+  useEffect(() => {
+    if (!open) return;
+    const away = (e: MouseEvent) => { if (!box.current?.contains(e.target as Node)) setOpen(false); };
+    document.addEventListener("mousedown", away);
+    return () => document.removeEventListener("mousedown", away);
+  }, [open]);
+
+  const pick = (o: Opt) => { if (o.disabled) return; onChange({ target: { value: o.value } }); setOpen(false); };
+  const openList = () => { setActive(Math.max(0, options.findIndex((o) => o.value === String(value)))); setOpen(true); };
+
+  const onKey = (e: React.KeyboardEvent) => {
+    if (disabled) return;
+    if (!open) { if (["ArrowDown", "ArrowUp", "Enter", " "].includes(e.key)) { e.preventDefault(); openList(); } return; }
+    if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); setOpen(false); }
+    else if (e.key === "ArrowDown") { e.preventDefault(); setActive((a) => Math.min(options.length - 1, a + 1)); }
+    else if (e.key === "ArrowUp") { e.preventDefault(); setActive((a) => Math.max(0, a - 1)); }
+    else if (e.key === "Home") { e.preventDefault(); setActive(0); }
+    else if (e.key === "End") { e.preventDefault(); setActive(options.length - 1); }
+    else if (e.key === "Enter" || e.key === " ") { e.preventDefault(); if (options[active]) pick(options[active]); }
+    else if (e.key === "Tab") setOpen(false);
+  };
+
+  return (
+    <div ref={box} className="relative">
+      <button type="button" disabled={disabled} role="combobox" aria-haspopup="listbox" aria-expanded={open} aria-label={ariaLabel}
+        onClick={() => (open ? setOpen(false) : openList())} onKeyDown={onKey}
+        className="w-full flex items-center justify-between gap-2 border border-slate-300 rounded-lg px-3.5 py-2.5 bg-white text-left transition-shadow disabled:opacity-50 disabled:bg-slate-50">
+        <span className={`truncate ${cur ? "" : "text-slate-400"}`}>{cur ? cur.label : placeholder ?? "Choose"}</span>
+        <ChevronDown className={`size-4 shrink-0 text-slate-500 transition-transform ${open ? "rotate-180" : ""}`} />
+      </button>
+      {open && (
+        <ul role="listbox" className="absolute z-50 left-0 right-0 mt-1 max-h-64 overflow-auto bg-white border border-line rounded-lg shadow-pop py-1">
+          {options.map((o, i) => (
+            <li key={o.value + i} role="option" aria-selected={o.value === String(value)} aria-disabled={o.disabled}
+              onMouseEnter={() => setActive(i)} onMouseDown={(e) => e.preventDefault()} onClick={() => pick(o)}
+              className={`flex items-center justify-between gap-3 px-3.5 py-2 cursor-pointer ${i === active ? "bg-slate-100" : ""} ${o.disabled ? "opacity-40 cursor-not-allowed" : ""}`}>
+              <span className="truncate">{o.label}</span>
+              {o.value === String(value) && <Check className="size-4 shrink-0 text-slate-900" />}
+            </li>
+          ))}
+        </ul>
+      )}
     </div>
   );
 }

@@ -1,7 +1,7 @@
 import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 import { ArrowLeft, Banknote, Minus, Percent, Plus, ScanBarcode, Search, ShoppingCart, Trash2, UserRound, X } from "lucide-react";
 import { fmtKES, fmtQty, lineTotal, toCents, vatOfGross } from "../../../shared/money";
-import { get, post, priceFor, useAuth, type Customer, type Product } from "../lib/api";
+import { get, post, priceFor, useAuth, type Customer, type Product, type Unit } from "../lib/api";
 import { Button, ErrorLine, Field, Input, Modal, NumInput, td, th } from "../lib/ui";
 import { Receipt, type SaleDoc } from "../lib/Receipt";
 import { PayModal } from "./PayModal";
@@ -9,7 +9,7 @@ import { OpenShift } from "./OpenShift";
 import { useConfirm, useToast } from "../lib/toast";
 import { useLive } from "../lib/live";
 
-interface Line { product: Product; qty: number }
+interface Line { product: Product; qty: number; unit: Unit | null }
 type Method = "cash" | "mpesa" | "card" | "bank" | "credit";
 interface Pay { method: Method; amount: number | null; reference: string }
 
@@ -49,7 +49,7 @@ export default function Pos() {
 
   // pre-lowercased search text per product, rebuilt only when the catalogue changes
   const indexed = useMemo(
-    () => catalog.map((p) => ({ p, hay: `${p.name} ${p.sku} ${p.barcode ?? ""}`.toLowerCase() })),
+    () => catalog.map((p) => ({ p, hay: `${p.name} ${p.sku} ${p.barcode ?? ""} ${(p.units ?? []).map((u) => u.barcode ?? "").join(" ")}`.toLowerCase() })),
     [catalog],
   );
   const deferredQ = useDeferredValue(q);
@@ -67,13 +67,13 @@ export default function Pos() {
   // brief highlight on the cart line that just changed (two alternating keyframes restart the animation)
   const [flash, setFlash] = useState<{ id: number; n: number } | null>(null);
 
-  const add = (p: Product) => {
+  const add = (p: Product, unit: Unit | null = null) => {
     setMsg("");
     setFlash((f) => ({ id: p.id, n: (f?.n ?? 0) + 1 }));
     setCart((c) => {
-      const i = c.findIndex((l) => l.product.id === p.id);
+      const i = c.findIndex((l) => l.product.id === p.id && (l.unit?.id ?? 0) === (unit?.id ?? 0));
       if (i >= 0) return c.map((l, k) => (k === i ? { ...l, qty: l.qty + 1 } : l));
-      return [...c, { product: p, qty: 1 }];
+      return [...c, { product: p, qty: 1, unit }];
     });
     setQ("");
     searchRef.current?.focus();
@@ -82,6 +82,8 @@ export default function Pos() {
   // scanner: Enter with an exact barcode/SKU match adds straight away
   const onSearchKey = (e: React.KeyboardEvent) => {
     if (e.key !== "Enter" || !q.trim()) return;
+    const packHit = results.find((p) => p.units?.some((u) => u.barcode === q.trim()));
+    if (packHit) return add(packHit, packHit.units.find((u) => u.barcode === q.trim()) ?? null);
     const exact = results.find((p) => p.barcode === q.trim() || p.sku.toLowerCase() === q.trim().toLowerCase());
     if (exact) add(exact);
     else if (results.length === 1) add(results[0]);
@@ -89,7 +91,7 @@ export default function Pos() {
   };
 
   const lines = useMemo(
-    () => cart.map((l) => { const unit = priceFor(l.product, tier); return { ...l, unit, gross: lineTotal(unit, Math.round(l.qty * 1000)) }; }),
+    () => cart.map((l) => { const unit = priceFor(l.product, tier, l.unit); return { ...l, unitPrice: unit, gross: lineTotal(unit, Math.round(l.qty * 1000)) }; }),
     [cart, tier],
   );
   const subtotal = lines.reduce((a, l) => a + l.gross, 0);
@@ -132,7 +134,7 @@ export default function Pos() {
   if (shift === undefined) return null;
   if (shift === null) return <OpenShift onOpened={loadShift} />;
 
-  const invalid = cart.some((l) => l.qty <= 0 || (!l.product.allow_fraction && !Number.isInteger(l.qty)));
+  const invalid = cart.some((l) => l.qty <= 0 || ((l.unit || !l.product.allow_fraction) && !Number.isInteger(l.qty)));
 
   return (
     <div className="h-full grid grid-cols-1 grid-rows-[minmax(0,1fr)] lg:grid-cols-[1fr_28rem]">
@@ -194,10 +196,18 @@ export default function Pos() {
           <table className="w-full">
             <tbody>
               {lines.map((l, i) => (
-                <tr key={l.product.id} className={flash?.id === l.product.id ? (flash.n % 2 ? "flash-a" : "flash-b") : ""}>
+                <tr key={`${l.product.id}-${l.unit?.id ?? 0}`} className={flash?.id === l.product.id ? (flash.n % 2 ? "flash-a" : "flash-b") : ""}>
                   <td className={td}>
                     <div className="font-medium leading-tight">{l.product.name}</div>
-                    <div className="text-xs text-gray-500">{fmtKES(l.unit)} per {l.product.unit}{l.product.stock_shop < Math.round(l.qty * 1000) ? " - low stock" : ""}</div>
+                    <div className="text-xs text-gray-500">{fmtKES(l.unitPrice)} per {l.unit?.name ?? l.product.unit}{l.product.stock_shop < Math.round(l.qty * (l.unit?.factor_milli ?? 1000)) ? " - low stock" : ""}</div>
+                    {l.product.units?.length > 0 && (
+                      <div className="flex flex-wrap gap-1 mt-1.5">
+                        {[{ id: 0, name: l.product.unit, factor_milli: 1000, price_cents: null, barcode: null } as Unit, ...l.product.units].map((u) => (
+                          <button key={u.id} onClick={() => setCart((c) => c.map((x, k) => (k === i ? { ...x, unit: u.id === 0 ? null : u, qty: u.id === 0 ? x.qty : Math.max(1, Math.round(x.qty)) } : x)))}
+                            className={`rounded-full px-2.5 py-0.5 text-xs font-semibold border ${(l.unit?.id ?? 0) === u.id ? "bg-slate-900 text-white border-slate-900" : "bg-white border-slate-300 text-slate-600 hover:bg-slate-50"}`}>{u.name}</button>
+                        ))}
+                      </div>
+                    )}
                   </td>
                   <td className={`${td} w-36 sm:w-40 !px-2 sm:!px-4`}>
                     <div className="flex items-center gap-1">
@@ -256,7 +266,7 @@ export default function Pos() {
       )}
       {modal === "pay" && (
         <PayModal total={total} customer={customer} onClose={() => setModal(null)}
-          items={cart.map((l) => ({ productId: l.product.id, qtyMilli: Math.round(l.qty * 1000) }))}
+          items={cart.map((l) => ({ productId: l.product.id, qtyMilli: Math.round(l.qty * 1000), unitId: l.unit?.id ?? null }))}
           discount={discount} approvalPin={approvalRef.current}
           onDone={(s) => { setModal(null); setDone(s); reloadCatalog(); }} />
       )}
@@ -280,33 +290,25 @@ const approvalRef = { current: "" };
 function CustomerPicker({ onClose, onPick }: { onClose: () => void; onPick: (c: Customer | null) => void }) {
   const [q, setQ] = useState("");
   const [list, setList] = useState<Customer[]>([]);
-  const [adding, setAdding] = useState(false);
-  const [name, setName] = useState(""); const [phone, setPhone] = useState(""); const [err, setErr] = useState("");
   useEffect(() => { get<Customer[]>(`/api/customers?q=${encodeURIComponent(q)}`).then(setList); }, [q]);
   return (
-    <Modal title="Customer" onClose={onClose}>
-      <Button className="w-full mb-3" onClick={() => onPick(null)}>Walk-in customer (no account)</Button>
-      <Input autoFocus placeholder="Search name or phone" value={q} onChange={(e) => setQ(e.target.value)} />
-      <div className="mt-2 max-h-64 overflow-auto border border-line rounded-md">
-        {list.map((c) => (
-          <button key={c.id} onClick={() => onPick(c)} className="w-full text-left px-3 py-2 border-b border-gray-200 hover:bg-blue-50">
-            <span className="font-medium">{c.name}</span> <span className="text-sm text-gray-500">{c.phone} - {c.tier}</span>
-            {c.balance_cents > 0 && <span className="block text-sm text-danger">Owes KES {fmtKES(c.balance_cents)}</span>}
-          </button>
-        ))}
-        {!list.length && <p className="p-3 text-gray-500">No customers match.</p>}
+    <Modal title="Registered customer" onClose={onClose}>
+      <Button className="w-full mb-3" onClick={() => onPick(null)}>No account, ordinary sale</Button>
+      <Input autoFocus placeholder="Search a registered customer" value={q} onChange={(e) => setQ(e.target.value)} />
+      <div className="mt-2 max-h-64 overflow-auto border border-line rounded-lg">
+        {list.map((c) => {
+          const avail = c.credit_available_cents ?? 0;
+          return (
+            <button key={c.id} onClick={() => onPick(c)} className="w-full text-left px-3 py-2.5 border-b border-slate-100 hover:bg-slate-50">
+              <span className="font-medium">{c.name}</span> <span className="text-sm text-slate-500">{c.phone} · {c.tier}</span>
+              {c.credit_stopped ? <span className="block text-sm font-medium text-danger">Credit stopped</span>
+                : c.credit_limit_cents > 0 ? <span className={`block text-sm ${avail > 0 ? "text-slate-500" : "text-danger"}`}>{avail > 0 ? `KES ${fmtKES(avail)} credit available` : "Credit limit reached"}</span> : null}
+            </button>
+          );
+        })}
+        {!list.length && <p className="p-3 text-slate-500">No registered customers match.</p>}
       </div>
-      {adding ? (
-        <div className="mt-3 space-y-2">
-          <Input placeholder="Name" value={name} onChange={(e) => setName(e.target.value)} />
-          <Input placeholder="Phone" value={phone} onChange={(e) => setPhone(e.target.value)} />
-          <ErrorLine msg={err} />
-          <Button variant="primary" onClick={async () => {
-            try { const r = await post("/api/customers", { name, phone: phone || null }); onPick({ id: r.id, name, phone, kra_pin: null, tier: "retail", credit_limit_cents: 0, balance_cents: 0 }); }
-            catch (e) { setErr((e as Error).message); }
-          }}>Save customer</Button>
-        </div>
-      ) : <Button className="mt-3" onClick={() => setAdding(true)}>New customer</Button>}
+      <p className="text-sm text-slate-500 mt-3">Only people who buy on credit or get special prices are registered. Walk-in customers need no record. A manager registers new borrowers, and selling on credit needs a manager's PIN.</p>
     </Modal>
   );
 }

@@ -232,6 +232,10 @@ export function catalogRoutes(app: FastifyInstance) {
     priceContractorCents: z.number().int().min(0).nullish(),
     priceWholesaleCents: z.number().int().min(0).nullish(),
     reorderLevelMilli: z.number().int().min(0).default(0),
+    itemClassCode: z.string().trim().max(40).nullish(),
+    qtyUnitCode: z.string().trim().max(10).nullish(),
+    packUnitCode: z.string().trim().max(10).nullish(),
+    originCountry: z.string().trim().max(3).nullish(),
   });
 
   const productSelect = `
@@ -251,14 +255,19 @@ export function catalogRoutes(app: FastifyInstance) {
       // exact barcode/sku hit sorts first; otherwise every word must appear in the name
       const words = q.trim().split(/\s+/);
       for (const w of words) {
-        where.push("(p.name LIKE ? OR p.sku LIKE ? OR p.barcode LIKE ?)");
-        params.push(`%${w}%`, `%${w}%`, `%${w}%`);
+        where.push("(p.name LIKE ? OR p.sku LIKE ? OR p.barcode LIKE ? OR EXISTS (SELECT 1 FROM product_units u WHERE u.product_id=p.id AND u.barcode LIKE ?))");
+        params.push(`%${w}%`, `%${w}%`, `%${w}%`, `%${w}%`);
       }
     }
     const sql = `${productSelect} ${where.length ? "WHERE " + where.join(" AND ") : ""}
-      ORDER BY (p.barcode = ? OR p.sku = ?) DESC, p.name LIMIT ${max}`;
-    const rows = db.prepare(sql).all(...params, q ?? "", q ?? "") as unknown as Record<string, unknown>[];
-    return can(req.user!, "products.view_cost") ? rows : rows.map((r) => ({ ...r, cost_cents: 0 }));
+      ORDER BY (p.barcode = ? OR p.sku = ? OR EXISTS (SELECT 1 FROM product_units u WHERE u.product_id=p.id AND u.barcode = ?)) DESC, p.name LIMIT ${max}`;
+    const rows = db.prepare(sql).all(...params, q ?? "", q ?? "", q ?? "") as unknown as (Record<string, unknown> & { id: number })[];
+    // attach each product's other selling units
+    const units = rows.length
+      ? (db.prepare(`SELECT id, product_id, name, factor_milli, price_cents, barcode FROM product_units WHERE product_id IN (${rows.map(() => "?").join(",")}) ORDER BY factor_milli`).all(...rows.map((r) => r.id)) as unknown as { product_id: number }[])
+      : [];
+    const withUnits = rows.map((r) => ({ ...r, units: units.filter((u) => u.product_id === r.id) }));
+    return can(req.user!, "products.view_cost") ? withUnits : withUnits.map((r) => ({ ...r, cost_cents: 0 }));
   });
 
   app.post("/api/products", { preHandler: requirePerm("products.manage") }, async (req) => {
@@ -267,12 +276,13 @@ export function catalogRoutes(app: FastifyInstance) {
       const r = db
         .prepare(
           `INSERT INTO products (sku,barcode,name,category_id,unit,allow_fraction,vat_code,cost_cents,
-             price_retail_cents,price_contractor_cents,price_wholesale_cents,reorder_level_milli)
-           VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`,
+             price_retail_cents,price_contractor_cents,price_wholesale_cents,reorder_level_milli,item_class_code,qty_unit_code,pack_unit_code,origin_country)
+           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
         )
         .run(
           b.sku, b.barcode || null, b.name, b.categoryId ?? null, b.unit, b.allowFraction ? 1 : 0, b.vatCode,
           b.costCents, b.priceRetailCents, b.priceContractorCents ?? null, b.priceWholesaleCents ?? null, b.reorderLevelMilli,
+          b.itemClassCode || null, b.qtyUnitCode || null, b.packUnitCode || null, b.originCountry || "KE",
         );
       audit(req.user!.id, "product_create", { sku: b.sku });
       return { id: Number(r.lastInsertRowid) };
@@ -293,6 +303,8 @@ export function catalogRoutes(app: FastifyInstance) {
       priceContractorCents: ["price_contractor_cents", b.priceContractorCents ?? null],
       priceWholesaleCents: ["price_wholesale_cents", b.priceWholesaleCents ?? null],
       reorderLevelMilli: ["reorder_level_milli", b.reorderLevelMilli], active: ["active", b.active ? 1 : 0],
+      itemClassCode: ["item_class_code", b.itemClassCode || null], qtyUnitCode: ["qty_unit_code", b.qtyUnitCode || null],
+      packUnitCode: ["pack_unit_code", b.packUnitCode || null], originCountry: ["origin_country", b.originCountry || "KE"],
     };
     const sets: string[] = [];
     const vals: unknown[] = [];
@@ -308,6 +320,37 @@ export function catalogRoutes(app: FastifyInstance) {
       throw e;
     }
     audit(req.user!.id, "product_update", { id, fields: Object.keys(req.body as object) });
+    return { ok: true };
+  });
+
+  // ---------------- selling units ----------------
+  app.put("/api/products/:id/units", { preHandler: requirePerm("products.manage") }, async (req) => {
+    const id = Number((req.params as { id: string }).id);
+    const b = parse(
+      z.object({
+        units: z.array(z.object({
+          name: z.string().trim().min(1, "Give each unit a name").max(30),
+          factor: z.number().positive("Say how many it contains").max(100000),
+          priceCents: z.number().int().min(0).nullish(),
+          barcode: z.string().trim().max(60).nullish(),
+        })).max(10),
+      }),
+      req.body,
+    );
+    if (!db.prepare("SELECT 1 FROM products WHERE id=?").get(id)) throw new HttpError(404, "Product not found");
+    const names = b.units.map((u) => u.name.toLowerCase());
+    if (new Set(names).size !== names.length) throw new HttpError(400, "Two units have the same name");
+    try {
+      tx(() => {
+        db.prepare("DELETE FROM product_units WHERE product_id=?").run(id);
+        const ins = db.prepare("INSERT INTO product_units (product_id,name,factor_milli,price_cents,barcode) VALUES (?,?,?,?,?)");
+        for (const u of b.units) ins.run(id, u.name, Math.round(u.factor * 1000), u.priceCents ?? null, u.barcode || null);
+      });
+    } catch (e) {
+      if (String(e).includes("UNIQUE")) throw new HttpError(409, "That barcode is already used by another unit");
+      throw e;
+    }
+    audit(req.user!.id, "product_units", { id, units: b.units.map((u) => u.name) });
     return { ok: true };
   });
 

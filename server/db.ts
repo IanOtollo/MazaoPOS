@@ -170,6 +170,18 @@ CREATE TABLE IF NOT EXISTS supplier_ledger (
 );
 CREATE INDEX IF NOT EXISTS idx_sl_supplier ON supplier_ledger(supplier_id);
 
+-- Other ways to sell the same product (a 50 m roll of an item priced per metre, a dozen of an item priced per piece).
+-- Stock is always kept in the product's own unit; factor_milli says how many of those one of this unit contains (x1000).
+CREATE TABLE IF NOT EXISTS product_units (
+  id INTEGER PRIMARY KEY,
+  product_id INTEGER NOT NULL REFERENCES products(id),
+  name TEXT NOT NULL,
+  factor_milli INTEGER NOT NULL CHECK (factor_milli > 0),
+  price_cents INTEGER,
+  barcode TEXT UNIQUE
+);
+CREATE INDEX IF NOT EXISTS idx_pu_product ON product_units(product_id);
+
 CREATE TABLE IF NOT EXISTS shifts (
   id INTEGER PRIMARY KEY,
   user_id INTEGER NOT NULL REFERENCES users(id),
@@ -256,7 +268,15 @@ function seedRoles() {
 }
 seedRoles();
 {
-  const NEW_FOR_MANAGER = ["suppliers.manage"];
+  {
+    const key = "topdown_cashier_customers_v2";
+    if (!db.prepare("SELECT 1 FROM settings WHERE key=?").get(key)) {
+      const cashier = db.prepare("SELECT id FROM roles WHERE is_system=0 AND name='Cashier'").get() as { id: number } | undefined;
+      if (cashier) db.prepare("DELETE FROM role_permissions WHERE role_id=? AND permission IN ('customers.create','customers.payment')").run(cashier.id);
+      db.prepare("INSERT OR REPLACE INTO settings (key,value) VALUES (?,?)").run(key, "1");
+    }
+  }
+  const NEW_FOR_MANAGER = ["suppliers.manage", "sales.credit"];
   for (const p of NEW_FOR_MANAGER) {
     const key = "topup_" + p;
     if (db.prepare("SELECT 1 FROM settings WHERE key=?").get(key)) continue;
@@ -292,6 +312,25 @@ if (!userCols.some((c) => c.name === "role_id")) {
 // credit terms: how many days a customer has to pay (added after the first release)
 const customerCols = db.prepare("PRAGMA table_info(customers)").all() as { name: string }[];
 if (!customerCols.some((c) => c.name === "credit_days")) db.exec("ALTER TABLE customers ADD COLUMN credit_days INTEGER NOT NULL DEFAULT 30");
+if (!customerCols.some((c) => c.name === "credit_stopped")) db.exec("ALTER TABLE customers ADD COLUMN credit_stopped INTEGER NOT NULL DEFAULT 0");
+// ID number, location and guarantor turned out not to be needed; remove them if an earlier version added them
+for (const col of ["id_number", "address", "guarantor"]) {
+  if (customerCols.some((c) => c.name === col)) {
+    try { db.exec(`ALTER TABLE customers DROP COLUMN ${col}`); } catch { /* harmless if it cannot be dropped */ }
+  }
+}
+
+// columns added after the first release
+{
+  const has = (t: string, c: string) => (db.prepare(`PRAGMA table_info(${t})`).all() as { name: string }[]).some((x) => x.name === c);
+  if (!has("sale_items", "base_qty_milli")) {
+    db.exec("ALTER TABLE sale_items ADD COLUMN base_qty_milli INTEGER");
+    db.exec("UPDATE sale_items SET base_qty_milli = qty_milli WHERE base_qty_milli IS NULL");
+  }
+  // tax-authority item details (kept per item so eTIMS can be switched on later without touching the catalogue)
+  for (const [col, ddl] of [["item_class_code", "TEXT"], ["qty_unit_code", "TEXT"], ["pack_unit_code", "TEXT"], ["origin_country", "TEXT DEFAULT 'KE'"]] as const)
+    if (!has("products", col)) db.exec(`ALTER TABLE products ADD COLUMN ${col} ${ddl}`);
+}
 
 // ---------- helpers ----------
 export function tx<T>(fn: () => T): T {

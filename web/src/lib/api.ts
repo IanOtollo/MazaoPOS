@@ -43,7 +43,9 @@ export const put = <T = any>(p: string, b: unknown) => api<T>("PUT", p, b);
 export interface User { id: number; name: string; role: string; roleId?: number; permissions: Permission[] }
 export const userCan = (u: Pick<User, "permissions">, p: Permission) => u.permissions.includes(p);
 
+export interface Unit { id: number; name: string; factor_milli: number; price_cents: number | null; barcode: string | null }
 export interface Product {
+  units: Unit[]; item_class_code?: string | null; qty_unit_code?: string | null; pack_unit_code?: string | null; origin_country?: string | null;
   id: number; sku: string; barcode: string | null; name: string; category: string | null; category_id: number | null;
   unit: string; allow_fraction: number; vat_code: "A" | "B" | "E"; cost_cents: number;
   price_retail_cents: number; price_contractor_cents: number | null; price_wholesale_cents: number | null;
@@ -51,10 +53,18 @@ export interface Product {
 }
 export interface Customer {
   id: number; name: string; phone: string | null; kra_pin: string | null;
-  tier: "retail" | "contractor" | "wholesale"; credit_limit_cents: number; credit_days?: number; balance_cents: number;
+  tier: "retail" | "contractor" | "wholesale"; credit_limit_cents: number; credit_days?: number; credit_stopped?: number; credit_available_cents?: number; balance_cents: number;
 }
 
-export function priceFor(p: Product, tier: Customer["tier"]): number {
+/** Price of ONE of the chosen unit (or of the product's own unit when none is chosen). Mirrors the server. */
+export function priceFor(p: Product, tier: Customer["tier"], unit?: Unit | null): number {
+  const base = basePriceFor(p, tier);
+  if (!unit) return base;
+  if (unit.price_cents != null && tier === "retail") return unit.price_cents;
+  return Math.round((base * unit.factor_milli) / 1000);
+}
+
+function basePriceFor(p: Product, tier: Customer["tier"]): number {
   if (tier === "wholesale" && p.price_wholesale_cents != null) return p.price_wholesale_cents;
   if ((tier === "contractor" || tier === "wholesale") && p.price_contractor_cents != null) return p.price_contractor_cents;
   return p.price_retail_cents;

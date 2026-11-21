@@ -10,6 +10,15 @@ interface SupplierRow { id: number; name: string; phone: string | null; email: s
 const owedTo = (id: number) =>
   (db.prepare("SELECT COALESCE(SUM(amount_cents),0) AS b FROM supplier_ledger WHERE supplier_id=?").get(id) as { b: number }).b;
 
+const supplierPatch = z.object({
+  name: z.string().trim().min(1).optional(),
+  phone: z.string().nullish(),
+  email: z.string().nullish(),
+  kraPin: z.string().nullish(),
+  creditDays: z.number().int().min(0).max(365).optional(),
+  active: z.boolean().optional(),
+});
+
 const supplierBody = z.object({
   name: z.string().trim().min(1, "Give the supplier a name"),
   phone: z.string().nullish(),
@@ -41,7 +50,7 @@ export function supplierRoutes(app: FastifyInstance) {
 
   app.patch("/api/suppliers/:id", guard, async (req) => {
     const id = Number((req.params as { id: string }).id);
-    const b = parse(supplierBody.partial().extend({ active: z.boolean().optional() }), req.body);
+    const b = parse(supplierPatch, req.body);
     const cur = db.prepare("SELECT * FROM suppliers WHERE id=?").get(id) as unknown as SupplierRow | undefined;
     if (!cur) throw new HttpError(404, "Supplier not found");
     db.prepare("UPDATE suppliers SET name=?,phone=?,email=?,kra_pin=?,credit_days=?,active=? WHERE id=?").run(

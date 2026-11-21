@@ -203,7 +203,7 @@ function Shell({ user, onLogout }: { user: User; onLogout: () => void }) {
               {item("/inventory", "Inventory", Package, canReports ? pill(status.lowStock, "amber") : undefined)}
               {can("suppliers.manage") && item("/suppliers", "Suppliers", Truck)}
             </>)}
-            {group("People", <>
+            {can("customers.manage") && group("People", <>
               {item("/customers", "Customers", Users, pill(status.owing, "rose"))}
             </>)}
             {showShift && group("Money", item("/shift", "Shift & cash-up", Wallet))}
@@ -274,7 +274,7 @@ function Shell({ user, onLogout }: { user: User; onLogout: () => void }) {
             <Route path="/inventory" element={<Products />} />
             <Route path="/suppliers" element={can("suppliers.manage") ? <Suppliers /> : <Navigate to={home} replace />} />
             <Route path="/products" element={<Navigate to="/inventory" replace />} />
-            <Route path="/customers" element={<Customers />} />
+            <Route path="/customers" element={can("customers.manage") ? <Customers /> : <Navigate to={home} replace />} />
             <Route path="/shift" element={<Shift />} />
             <Route path="/reports" element={canReports ? <Reports /> : <Navigate to={home} replace />} />
             <Route path="/settings" element={canAdmin ? <Settings /> : <Navigate to={home} replace />} />

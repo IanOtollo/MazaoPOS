@@ -5,7 +5,7 @@ import { fmtTime, get, patch, post, type Product } from "../lib/api";
 import { useLive } from "../lib/live";
 import { fmtDay } from "../lib/range";
 import { useToast } from "../lib/toast";
-import { Button, EmptyState, ErrorLine, Field, Input, Modal, NumInput, PageHead, inputCls, td, th } from "../lib/ui";
+import { Button, EmptyState, ErrorLine, Field, Input, Modal, NumInput, PageHead, inputCls, td, th, Select } from "../lib/ui";
 import { AgeingBar, type Buckets } from "./Customers";
 
 interface Sup { id: number; name: string; phone: string | null; email: string | null; kra_pin: string | null; credit_days: number; owed_cents: number; overdue_cents: number; max_days_overdue: number; last_delivery: string | null }
@@ -236,7 +236,7 @@ function PaySupplier({ id, max, onDone }: { id: number; max: number; onDone: () 
     <div className="border border-line rounded-lg p-3 mb-4 bg-slate-50">
       <div className="grid sm:grid-cols-[1fr_10rem_1fr_auto] gap-3 items-end">
         <Field label="Amount (KES)"><NumInput value={amt} onChange={setAmt} autoFocus placeholder={fmtKES(max)} /></Field>
-        <Field label="Paid by"><select className={inputCls} value={method} onChange={(e) => setMethod(e.target.value)}><option value="bank">Bank</option><option value="mpesa">M-Pesa</option><option value="cash">Cash</option><option value="card">Card</option><option value="credit_note">Credit note</option></select></Field>
+        <Field label="Paid by"><Select className={inputCls} value={method} onChange={(e) => setMethod(e.target.value)}><option value="bank">Bank</option><option value="mpesa">M-Pesa</option><option value="cash">Cash</option><option value="card">Card</option><option value="credit_note">Credit note</option></Select></Field>
         <Field label="Reference"><Input value={ref} onChange={(e) => setRef(e.target.value)} placeholder="optional" /></Field>
         <Button variant="primary" onClick={go}>Save</Button>
       </div>
@@ -295,11 +295,11 @@ function ReceiveGoods({ supplierId, suppliers, onClose, onDone }: { supplierId: 
     <Modal wide title="Receive goods" onClose={onClose}>
       <div className="grid sm:grid-cols-4 gap-3 mb-4">
         <div className="sm:col-span-2"><Field label="Supplier">
-          <select className={inputCls} value={sup} onChange={(e) => setSup(e.target.value ? Number(e.target.value) : "")}>
+          <Select className={inputCls} value={sup} onChange={(e) => setSup(e.target.value ? Number(e.target.value) : "")}>
             <option value="">Choose supplier</option>{suppliers.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
-          </select></Field></div>
+          </Select></Field></div>
         <Field label="Their invoice no."><Input value={invoice} onChange={(e) => setInvoice(e.target.value)} /></Field>
-        <Field label="Received at"><select className={inputCls} value={loc} onChange={(e) => setLoc(Number(e.target.value))}><option value={1}>Shop</option><option value={2}>Store</option></select></Field>
+        <Field label="Received at"><Select className={inputCls} value={loc} onChange={(e) => setLoc(Number(e.target.value))}><option value={1}>Shop</option><option value={2}>Store</option></Select></Field>
       </div>
 
       <div className="relative mb-3">
@@ -333,7 +333,7 @@ function ReceiveGoods({ supplierId, suppliers, onClose, onDone }: { supplierId: 
       <div className="grid sm:grid-cols-[1fr_1fr_1fr_auto] gap-3 items-end border-t border-line pt-3">
         <div><div className="text-sm text-slate-500">Delivery total</div><div className="text-2xl font-bold">KES {fmtKES(total)}</div></div>
         <Field label="Paid now (KES)" hint="Leave empty to owe it"><NumInput value={paid} onChange={setPaid} /></Field>
-        <Field label="Paid by"><select className={inputCls} value={method} onChange={(e) => setMethod(e.target.value)}><option value="cash">Cash</option><option value="mpesa">M-Pesa</option><option value="bank">Bank</option><option value="card">Card</option></select></Field>
+        <Field label="Paid by"><Select className={inputCls} value={method} onChange={(e) => setMethod(e.target.value)}><option value="cash">Cash</option><option value="mpesa">M-Pesa</option><option value="bank">Bank</option><option value="card">Card</option></Select></Field>
         <Field label="Date"><Input type="date" value={date} max={new Date(Date.now() + 3 * 3600000).toISOString().slice(0, 10)} onChange={(e) => setDate(e.target.value)} /></Field>
       </div>
       <div className="mt-2"><ErrorLine msg={err} /></div>

@@ -15,7 +15,7 @@ const balanceOf = (id: number) =>
 
 export function crmRoutes(app: FastifyInstance) {
   // Everyone who owes money, oldest debts first. Powers the Owing / Overdue views of the Customers screen.
-  app.get("/api/receivables", { preHandler: requireLogin() }, async () => {
+  app.get("/api/receivables", { preHandler: requirePerm("customers.manage") }, async () => {
     const owing = db
       .prepare(
         `SELECT c.* FROM customers c WHERE c.active=1
@@ -62,18 +62,19 @@ export function crmRoutes(app: FastifyInstance) {
   });
 
   // One customer's full account: ageing, statement with a running balance, and the follow-up log.
-  app.get("/api/customers/:id/account", { preHandler: requireLogin() }, async (req) => {
+  app.get("/api/customers/:id/account", { preHandler: requirePerm("customers.manage") }, async (req) => {
     const id = Number((req.params as { id: string }).id);
     const c = db.prepare("SELECT * FROM customers WHERE id=?").get(id) as unknown as CustomerRow | undefined;
     if (!c) throw new HttpError(404, "Customer not found");
 
     const asc = db
       .prepare(
-        `SELECT l.id, l.amount_cents, l.type, l.method, l.note, l.created_at, s.receipt_no
+        `SELECT l.id, l.amount_cents, l.type, l.method, l.note, l.created_at, s.receipt_no, cu.name AS cashier, au.name AS approver
          FROM customer_ledger l LEFT JOIN sales s ON l.ref_type='sale' AND s.id=l.ref_id
+         LEFT JOIN users cu ON cu.id=s.user_id LEFT JOIN users au ON au.id=s.approved_by
          WHERE l.customer_id=? ORDER BY l.id`,
       )
-      .all(id) as unknown as { id: number; amount_cents: number; type: string; method: string | null; note: string | null; created_at: string; receipt_no: string | null }[];
+      .all(id) as unknown as { id: number; amount_cents: number; type: string; method: string | null; note: string | null; created_at: string; receipt_no: string | null; cashier: string | null; approver: string | null }[];
     let run = 0;
     const statement = asc.map((r) => ({ ...r, balance_cents: (run += r.amount_cents) })).reverse();
 

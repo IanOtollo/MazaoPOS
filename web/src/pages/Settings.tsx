@@ -3,7 +3,7 @@ import { useSearchParams } from "react-router-dom";
 import { Download, Lock, Plus, Trash2 } from "lucide-react";
 import { ADMIN_EXCLUDED, PERMISSIONS, PERMISSION_GROUPS, type Permission } from "../../../shared/permissions";
 import { api, get, getToken, patch, post, put, useAuth } from "../lib/api";
-import { Button, ErrorLine, Field, Input, Modal, PageHead, inputCls, td, th } from "../lib/ui";
+import { Button, ErrorLine, Field, Input, Modal, PageHead, inputCls, td, th, Select } from "../lib/ui";
 import { useConfirm, useToast } from "../lib/toast";
 import { setBrand } from "../lib/brand";
 import { useLive } from "../lib/live";
@@ -131,9 +131,9 @@ function StaffForm({ row, roles, selfId, onClose, onSaved }: { row: StaffRow | n
       <div className="space-y-4">
         {!row && <Field label="Name"><Input value={name} onChange={(e) => setName(e.target.value)} autoFocus /></Field>}
         <Field label="Role" hint={selected ? `${selected.description} (${selected.permissions.length} permissions)` : undefined}>
-          <select className={inputCls} value={roleId} onChange={(e) => setRoleId(Number(e.target.value))} disabled={self}>
+          <Select className={inputCls} value={roleId} onChange={(e) => setRoleId(Number(e.target.value))} disabled={self}>
             {roles.map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}
-          </select>
+          </Select>
         </Field>
         <Field label={row ? "New PIN (leave blank to keep the current one)" : "PIN (4 to 8 digits)"} hint="Every person needs their own PIN, so it also identifies who made each sale.">
           <Input type="password" inputMode="numeric" autoComplete="new-password" value={pin} onChange={(e) => setPin(e.target.value)} />
