@@ -275,6 +275,71 @@ export const routes: Record<string, Handler> = {
     };
   },
 
+  // what sells fast (by sales value) and what sits on the shelf (in stock, selling least)
+  "GET /api/reports/movers": async (ctx, { token, query }) => {
+    const user = await requirePerm(ctx, token, "reports.view");
+    const days = Math.min(Math.max(Math.floor(Number(query.days)) || 30, 1), 730);
+    const limit = Math.min(Math.max(Math.floor(Number(query.limit)) || 15, 5), 50);
+    const showCost = can(user, "products.view_cost");
+    const since = Date.now() - days * 86400000;
+
+    const products = (await ctx.db.query("products").collect()).filter((p) => p.active);
+    const onHand = new Map<number, number>();
+    for (const s of await ctx.db.query("stock").collect()) onHand.set(s.productId, (onHand.get(s.productId) ?? 0) + s.qtyMilli);
+
+    // one pass over the sales: net of refunds in the period, and the last time each item sold at all
+    const agg = new Map<number, { qty: number; revenue: number; cost: number; orders: number }>();
+    const lastSold = new Map<number, number>();
+    for (const sale of await ctx.db.query("sales").collect()) {
+      for (const it of sale.items) {
+        if (sale.kind === "sale" && sale.createdAt > (lastSold.get(it.productId) ?? 0)) lastSold.set(it.productId, sale.createdAt);
+        if (sale.createdAt < since) continue;
+        const a = agg.get(it.productId) ?? { qty: 0, revenue: 0, cost: 0, orders: 0 };
+        a.qty += it.baseQtyMilli;
+        a.revenue += it.lineTotalCents;
+        a.cost += Math.trunc((it.costCents * it.qtyMilli) / 1000);
+        if (sale.kind === "sale") a.orders++;
+        agg.set(it.productId, a);
+      }
+    }
+
+    const base = (p: (typeof products)[number]) => {
+      const a = agg.get(p.id);
+      return { id: p.id, sku: p.sku, name: p.name, unit: p.unit, sold_milli: a?.qty ?? 0, revenue_cents: a?.revenue ?? 0, on_hand_milli: onHand.get(p.id) ?? 0 };
+    };
+    const fast = products
+      .filter((p) => (agg.get(p.id)?.qty ?? 0) > 0)
+      .map((p) => {
+        const a = agg.get(p.id)!;
+        const r = base(p);
+        return {
+          ...r, orders: a.orders, profit_cents: showCost ? a.revenue - a.cost : null,
+          // how many days the stock on hand would last at this selling rate
+          cover_days: r.on_hand_milli > 0 ? Math.round(r.on_hand_milli / (a.qty / days)) : null,
+        };
+      })
+      .sort((x, y) => y.revenue_cents - x.revenue_cents)
+      .slice(0, limit);
+    const slow = products
+      .filter((p) => (onHand.get(p.id) ?? 0) > 0)
+      .map((p) => {
+        const r = base(p);
+        const last = lastSold.get(p.id);
+        return {
+          ...r, value_cost_cents: showCost ? Math.round((p.costCents * r.on_hand_milli) / 1000) : null,
+          value_selling_cents: Math.round((p.priceRetailCents * r.on_hand_milli) / 1000),
+          last_sold_at: last ? iso(last) : null, days_since_sold: last ? Math.floor((Date.now() - last) / 86400000) : null,
+        };
+      })
+      .sort((x, y) => x.revenue_cents - y.revenue_cents || y.value_selling_cents - x.value_selling_cents)
+      .slice(0, limit);
+    const inStock = products.filter((p) => (onHand.get(p.id) ?? 0) > 0);
+    return {
+      days, since: iso(since), fast, slow,
+      totals: { items_sold: [...agg.values()].filter((a) => a.qty > 0).length, items_in_stock: inStock.length, in_stock_unsold: inStock.filter((p) => (agg.get(p.id)?.qty ?? 0) <= 0).length },
+    };
+  },
+
   "GET /api/audit": async (ctx, { token }) => {
     await requirePerm(ctx, token, "audit.view");
     const rows = await ctx.db.query("auditLog").withIndex("by_time").order("desc").take(300);

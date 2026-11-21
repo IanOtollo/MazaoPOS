@@ -3,6 +3,7 @@ import { fmtTime } from "../lib/api";
 import { Bars, BarChart, Card, Kpi, List, PaymentMix, kes0 } from "../lib/charts";
 import { fmtDay, kpiSeries, useRange } from "../lib/range";
 import { PageHead, td, th } from "../lib/ui";
+import Movers from "./reports/Movers";
 
 /** The detailed view: everything the Dashboard summarises, for any period. */
 export default function Reports() {
@@ -86,6 +87,7 @@ export default function Reports() {
           </div>
         </div>
       )}
+      <Movers />
     </div>
   );
 }

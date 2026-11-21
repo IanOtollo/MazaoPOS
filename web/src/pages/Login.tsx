@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { Delete } from "lucide-react";
+import { ErrorLine } from "../lib/ui";
 import { get, post, type User } from "../lib/api";
 import { brandOr, setBrand, setLogo, useLogoUrl } from "../lib/brand";
 import { SiteFooter } from "../lib/Footer";
@@ -72,7 +73,7 @@ export default function Login({ onLogin }: { onLogin: (u: User, token: string) =
             className="mt-3 w-full h-12 rounded-lg bg-slate-900 text-white font-semibold hover:bg-slate-700 disabled:opacity-40 transition-colors">
             {busy ? "Please wait" : "Enter"}
           </button>
-          <p role="alert" className="mt-3 min-h-5 text-center text-sm font-medium text-danger">{err}</p>
+          <ErrorLine msg={err} />
         </div>
       </div>
       </div>

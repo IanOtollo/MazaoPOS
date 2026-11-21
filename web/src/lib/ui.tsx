@@ -1,5 +1,6 @@
 import { Children, isValidElement, useEffect, useRef, useState, type ButtonHTMLAttributes, type ComponentProps, type InputHTMLAttributes, type ReactElement, type ReactNode } from "react";
 import { Check, ChevronDown } from "lucide-react";
+import { notifyError } from "./notify";
 
 export function Button({ variant = "default", className = "", ...p }: ButtonHTMLAttributes<HTMLButtonElement> & { variant?: "default" | "primary" | "danger" }) {
   const v = {
@@ -158,8 +159,10 @@ export function Select({ value, onChange, children, disabled, placeholder, "aria
   );
 }
 
+/** Shows an error as a pop-up at the top right instead of text inside the form. Draws nothing itself. */
 export function ErrorLine({ msg }: { msg: string }) {
-  return msg ? <p className="text-danger text-sm font-medium" role="alert">{msg}</p> : null;
+  useEffect(() => { if (msg) notifyError(msg); }, [msg]);
+  return null;
 }
 
 export function PageHead({ title, children }: { title: string; children?: ReactNode }) {

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Plus, Printer, Truck, X } from "lucide-react";
+import { ClipboardList, Plus, Printer, Truck, X } from "lucide-react";
 import { fmtKES, fmtQty, toCents, toMilli } from "../../../shared/money";
 import { fmtTime, get, patch, post, type Product } from "../lib/api";
 import { useLive } from "../lib/live";
@@ -7,6 +7,7 @@ import { fmtDay } from "../lib/range";
 import { useToast } from "../lib/toast";
 import { Button, EmptyState, ErrorLine, Field, Input, Modal, NumInput, PageHead, inputCls, td, th, Select } from "../lib/ui";
 import { AgeingBar, type Buckets } from "./Customers";
+import { OrderForm, OrdersTab, type PrefillLine } from "./Lpos";
 
 interface Sup { id: number; name: string; phone: string | null; email: string | null; kra_pin: string | null; credit_days: number; owed_cents: number; overdue_cents: number; max_days_overdue: number; last_delivery: string | null }
 interface Detail {
@@ -15,10 +16,12 @@ interface Detail {
   statement: { id: number; amount_cents: number; type: string; method: string | null; note: string | null; created_at: string; invoice_no: string | null; balance_cents: number }[];
   deliveries: { id: number; invoice_no: string | null; received_on: string; total_cents: number; location: string; lines: number }[];
 }
-interface Reorder { id: number; sku: string; name: string; unit: string; stock_milli: number; reorder_level_milli: number; suggested_milli: number; last_supplier: string | null; last_supply: string | null }
+interface Reorder { id: number; sku: string; name: string; unit: string; cost_cents: number; last_supplier_id: number | null; stock_milli: number; reorder_level_milli: number; suggested_milli: number; last_supplier: string | null; last_supply: string | null }
 
 export default function Suppliers() {
-  const [tab, setTab] = useState<"suppliers" | "reorder">("suppliers");
+  const [tab, setTab] = useState<"suppliers" | "reorder" | "orders">("suppliers");
+  const [openOrders, setOpenOrders] = useState(0);
+  const [newOrder, setNewOrder] = useState<{ supplierId?: number; lines?: PrefillLine[] } | null>(null);
   const [data, setData] = useState<{ totals: { owed_cents: number; overdue_cents: number }; suppliers: Sup[] } | null>(null);
   const [reorder, setReorder] = useState<Reorder[]>([]);
   const [open, setOpen] = useState<number | null>(null);
@@ -28,6 +31,7 @@ export default function Suppliers() {
   const load = useCallback(() => {
     get<typeof data>("/api/suppliers").then(setData);
     get<Reorder[]>("/api/reorder").then(setReorder);
+    get<unknown[]>("/api/lpos?status=open").then((r) => setOpenOrders(r.length)).catch(() => {});
   }, []);
   useEffect(() => { load(); }, [load]);
   useLive(["suppliers", "stock"], load);
@@ -36,17 +40,20 @@ export default function Suppliers() {
     <div className="p-4 sm:p-6 max-w-6xl">
       <PageHead title="Suppliers">
         <Button onClick={() => setForm("new")} className="flex items-center gap-1.5"><Plus className="size-4" />Add supplier</Button>
+        <Button onClick={() => setNewOrder({})} className="flex items-center gap-1.5"><ClipboardList className="size-4" />New order</Button>
         <Button variant="primary" onClick={() => setReceive("any")} className="flex items-center gap-1.5"><Truck className="size-4" />Receive goods</Button>
       </PageHead>
 
       <div className="inline-flex rounded-lg border border-slate-300 bg-white p-0.5 mb-4" role="tablist">
-        {([["suppliers", "Suppliers"], ["reorder", `To reorder${reorder.length ? ` (${reorder.length})` : ""}`]] as ["suppliers" | "reorder", string][]).map(([id, label]) => (
+        {([["suppliers", "Suppliers"], ["reorder", `To reorder${reorder.length ? ` (${reorder.length})` : ""}`], ["orders", `Orders${openOrders ? ` (${openOrders})` : ""}`]] as ["suppliers" | "reorder" | "orders", string][]).map(([id, label]) => (
           <button key={id} role="tab" aria-selected={tab === id} onClick={() => setTab(id)}
             className={`px-3.5 py-1.5 rounded-md text-sm font-semibold transition-colors ${tab === id ? "bg-slate-900 text-white" : "text-slate-600 hover:bg-slate-100"}`}>{label}</button>
         ))}
       </div>
 
-      {tab === "suppliers" ? (
+      {tab === "orders" ? (
+        <OrdersTab suppliers={data?.suppliers ?? []} onNew={() => setNewOrder({})} />
+      ) : tab === "suppliers" ? (
         <>
           {data && data.totals.owed_cents > 0 && (
             <div className="flex flex-wrap gap-x-8 gap-y-2 bg-white border border-line rounded-xl shadow-card p-4 mb-4">
@@ -77,9 +84,10 @@ export default function Suppliers() {
           </div>
         </>
       ) : (
-        <ReorderList rows={reorder} />
+        <ReorderList rows={reorder} onOrder={(supplierId, lines) => setNewOrder({ supplierId, lines })} />
       )}
 
+      {newOrder && <OrderForm suppliers={data?.suppliers ?? []} prefill={newOrder} onClose={() => setNewOrder(null)} onSaved={() => { setNewOrder(null); setTab("orders"); load(); }} />}
       {form && <SupplierForm s={form === "new" ? null : form} onClose={() => setForm(null)} onSaved={() => { setForm(null); load(); }} />}
       {open && <SupplierView id={open} onClose={() => setOpen(null)} onEdit={(s) => { setOpen(null); setForm(s); }} onReceive={(id) => { setOpen(null); setReceive(id); }} onChanged={load} />}
       {receive && <ReceiveGoods supplierId={receive === "any" ? null : receive} suppliers={data?.suppliers ?? []} onClose={() => setReceive(null)} onDone={() => { setReceive(null); load(); }} />}
@@ -88,7 +96,7 @@ export default function Suppliers() {
 }
 
 // ---------------------------------------------------------------- what to buy
-function ReorderList({ rows }: { rows: Reorder[] }) {
+function ReorderList({ rows, onOrder }: { rows: Reorder[]; onOrder: (supplierId: number, lines: PrefillLine[]) => void }) {
   const groups = useMemo(() => {
     const m = new Map<string, Reorder[]>();
     for (const r of rows) m.set(r.last_supplier ?? "No supplier on record yet", [...(m.get(r.last_supplier ?? "No supplier on record yet") ?? []), r]);
@@ -105,7 +113,12 @@ function ReorderList({ rows }: { rows: Reorder[] }) {
       <div className="space-y-5">
         {groups.map(([supplier, items]) => (
           <section key={supplier} className="bg-white border border-line rounded-xl shadow-card overflow-auto print:shadow-none">
-            <h3 className="font-semibold px-4 py-3 border-b border-line bg-slate-50">{supplier}</h3>
+            <div className="flex items-center justify-between gap-3 px-4 py-2.5 border-b border-line bg-slate-50">
+              <h3 className="font-semibold">{supplier}</h3>
+              {items[0]?.last_supplier_id != null && (
+                <Button className="!py-1.5 print:hidden" onClick={() => onOrder(items[0].last_supplier_id!, items.map((r) => ({ productId: r.id, name: r.name, unit: r.unit, qty: r.suggested_milli / 1000, cost: r.cost_cents / 100 })))}>Make an order</Button>
+              )}
+            </div>
             <table className="w-full">
               <thead><tr><th className={th}>Item</th><th className={`${th} text-right`}>In stock</th><th className={`${th} text-right hidden sm:table-cell`}>Reorder at</th><th className={`${th} text-right`}>Order</th><th className={`${th} hidden md:table-cell`}>Last supplied</th></tr></thead>
               <tbody>

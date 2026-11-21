@@ -14,6 +14,7 @@ import type * as lib from "../lib.js";
 import type * as mod_auth from "../mod/auth.js";
 import type * as mod_catalog from "../mod/catalog.js";
 import type * as mod_crm from "../mod/crm.js";
+import type * as mod_lpo from "../mod/lpo.js";
 import type * as mod_misc from "../mod/misc.js";
 import type * as mod_reports from "../mod/reports.js";
 import type * as mod_sales from "../mod/sales.js";
@@ -34,6 +35,7 @@ declare const fullApi: ApiFromModules<{
   "mod/auth": typeof mod_auth;
   "mod/catalog": typeof mod_catalog;
   "mod/crm": typeof mod_crm;
+  "mod/lpo": typeof mod_lpo;
   "mod/misc": typeof mod_misc;
   "mod/reports": typeof mod_reports;
   "mod/sales": typeof mod_sales;

@@ -14,10 +14,24 @@
 }
 
 html, body, #root { height: 100%; }
+
+/* ---- accessibility choices (see lib/a11y.ts) ---- */
+html[data-text="large"] { font-size: 112.5%; }
+html[data-text="xlarge"] { font-size: 125%; }
+html[data-contrast="high"] { --color-line: #64748b; }
+html[data-contrast="high"] body { color: #000; }
+html[data-contrast="high"] .text-slate-300, html[data-contrast="high"] .text-slate-400, html[data-contrast="high"] .text-slate-500,
+html[data-contrast="high"] .text-gray-400, html[data-contrast="high"] .text-gray-500 { color: #1e293b; }
+html[data-contrast="high"] .text-slate-600, html[data-contrast="high"] .text-slate-700 { color: #0f172a; }
+html[data-contrast="high"] .border-slate-200, html[data-contrast="high"] .border-slate-300, html[data-contrast="high"] .border-line { border-color: #475569; }
+html[data-motion="reduce"] *, html[data-motion="reduce"] *::before, html[data-motion="reduce"] *::after {
+  animation-duration: 0.001ms !important; animation-iteration-count: 1 !important; transition-duration: 0.001ms !important; scroll-behavior: auto !important;
+}
+html[data-focus="strong"] :focus-visible { outline: 4px solid #1d4ed8 !important; outline-offset: 3px !important; }
 body {
   color: var(--color-ink);
   background: #f4f4f5;
-  font-size: 15px;
+  font-size: 0.9375rem; /* 15px at the normal size; follows the text size choice */
   font-weight: 450;
   -webkit-font-smoothing: antialiased;
 }
@@ -29,7 +43,7 @@ button:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 2
 ::-webkit-scrollbar { width: 10px; height: 10px; }
 ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 8px; border: 2px solid transparent; background-clip: content-box; }
 
-@keyframes toastIn { from { opacity: 0; transform: translateY(12px) scale(0.97); } to { opacity: 1; transform: none; } }
+@keyframes toastIn { from { opacity: 0; transform: translateY(-12px) scale(0.97); } to { opacity: 1; transform: none; } }
 .toast-in { animation: toastIn 0.22s cubic-bezier(0.16, 1, 0.3, 1); }
 @keyframes modalIn { from { opacity: 0; transform: translateY(10px) scale(0.98); } to { opacity: 1; transform: none; } }
 .modal-in { animation: modalIn 0.2s cubic-bezier(0.16, 1, 0.3, 1); }

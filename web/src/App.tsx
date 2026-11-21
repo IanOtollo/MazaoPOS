@@ -18,6 +18,7 @@ import Settings from "./pages/Settings";
 import Suppliers from "./pages/Suppliers";
 import { SiteFooter } from "./lib/Footer";
 import NotFound from "./pages/NotFound";
+import ProductDetail from "./pages/ProductDetail";
 
 const COLLAPSE_KEY = "pos_sidebar_collapsed";
 const CLOSED_KEY = "pos_nav_closed";
@@ -281,6 +282,7 @@ function Shell({ user, onLogout }: { user: User; onLogout: () => void }) {
             <Route path="/dashboard" element={canReports ? <Dashboard /> : <Navigate to={home} replace />} />
             <Route path="/sales" element={<Sales />} />
             <Route path="/inventory" element={<Products />} />
+            <Route path="/inventory/:id" element={<ProductDetail />} />
             <Route path="/suppliers" element={can("suppliers.manage") ? <Suppliers /> : <Navigate to={home} replace />} />
             <Route path="/products" element={<Navigate to="/inventory" replace />} />
             <Route path="/customers" element={can("customers.manage") ? <Customers /> : <Navigate to={home} replace />} />

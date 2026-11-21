@@ -1,4 +1,5 @@
-import { createContext, useCallback, useContext, useRef, useState, type ReactNode } from "react";
+import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from "react";
+import { onNotifyError } from "./notify";
 import { AlertTriangle, CheckCircle2, Info, X } from "lucide-react";
 import { Button, Modal } from "./ui";
 
@@ -22,6 +23,8 @@ export function FeedbackProvider({ children }: { children: ReactNode }) {
     setItems((x) => [...x.slice(-3), { ...t, id }]);
     setTimeout(() => dismiss(id), t.action ? 6000 : t.kind === "err" ? 6000 : 3200);
   }, [dismiss]);
+  // errors raised by forms (ErrorLine) and the sign-in screen pop up here too
+  useEffect(() => onNotifyError((msg) => toast({ msg, kind: "err" })), [toast]);
   const confirm = useCallback((o: ConfirmOpts) => new Promise<boolean>((resolve) => setAsk({ ...o, resolve })), []);
 
   const answer = (v: boolean) => { ask?.resolve(v); setAsk(null); };
@@ -30,12 +33,12 @@ export function FeedbackProvider({ children }: { children: ReactNode }) {
     <ToastCtx.Provider value={toast}>
       <ConfirmCtx.Provider value={confirm}>
         {children}
-        <div className="fixed bottom-5 left-1/2 -translate-x-1/2 z-[60] flex flex-col items-center gap-2 print:hidden" aria-live="polite">
+        <div className="fixed top-4 right-4 left-4 sm:left-auto z-[70] flex flex-col items-end gap-2 print:hidden pointer-events-none" aria-live="polite">
           {items.map((t) => {
             const Icon = t.kind === "err" ? AlertTriangle : t.kind === "info" ? Info : CheckCircle2;
             const tone = t.kind === "err" ? "text-red-400" : t.kind === "info" ? "text-sky-400" : "text-emerald-400";
             return (
-              <div key={t.id} className="toast-in flex items-center gap-3 rounded-lg bg-slate-900 text-white pl-4 pr-2 py-2.5 shadow-pop min-w-64 max-w-[90vw]">
+              <div key={t.id} className="toast-in pointer-events-auto flex items-center gap-3 rounded-lg bg-slate-900 text-white pl-4 pr-2 py-2.5 shadow-pop w-full sm:w-auto sm:min-w-72 sm:max-w-md">
                 <Icon className={`size-5 shrink-0 ${tone}`} />
                 <span className="font-medium flex-1">{t.msg}</span>
                 {t.action && (

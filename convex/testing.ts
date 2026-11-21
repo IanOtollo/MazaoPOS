@@ -6,7 +6,7 @@ declare const process: { env: Record<string, string | undefined> };
 const TABLES = [
   "counters", "settings", "topics", "files", "roles", "users", "sessions", "loginAttempts", "auditLog",
   "locations", "categories", "products", "stock", "stockMovements", "shifts", "sales",
-  "customers", "customerLedger", "customerNotes", "suppliers", "purchases", "supplierLedger",
+  "customers", "customerLedger", "customerNotes", "suppliers", "purchases", "lpos", "supplierLedger",
 ] as const;
 
 /**

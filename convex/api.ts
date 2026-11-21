@@ -7,13 +7,14 @@ import { routes as sales } from "./mod/sales";
 import { routes as crm } from "./mod/crm";
 import { routes as suppliers } from "./mod/suppliers";
 import { routes as reports } from "./mod/reports";
+import { routes as lpo } from "./mod/lpo";
 import { routes as misc } from "./mod/misc";
 
 /*
  * Every request from the screens arrives here as one call. Each module owns a table of routes keyed like
  * "GET /api/users/:id", with the same addresses and JSON as the old server, so the screens do not change.
  */
-const table: Record<string, Handler> = { ...auth, ...catalog, ...sales, ...crm, ...suppliers, ...reports, ...misc };
+const table: Record<string, Handler> = { ...auth, ...catalog, ...sales, ...crm, ...suppliers, ...lpo, ...reports, ...misc };
 const compiled = Object.entries(table).map(([key, fn]) => {
   const [method, path] = key.split(" ");
   return { method, parts: path.split("/").filter(Boolean), fn };
@@ -41,7 +42,7 @@ const TOPICS: [RegExp, string[]][] = [
   [/^\/api\/users/, ["staff", "roles"]],
   [/^\/api\/roles/, ["roles", "staff"]],
   [/^\/api\/logo/, ["settings"]],
-  [/^\/api\/(suppliers|purchases)/, ["suppliers", "stock", "products", "dashboard"]],
+  [/^\/api\/(suppliers|purchases|lpos)/, ["suppliers", "stock", "products", "dashboard"]],
   [/^\/api\/import/, ["products", "stock", "dashboard"]],
 ];
 

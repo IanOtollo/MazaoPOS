@@ -93,6 +93,14 @@ export default defineSchema({
     userId: v.optional(v.number()), receivedOn: v.string(), createdAt: v.number(),
     items: v.array(v.object({ productId: v.number(), name: v.string(), qtyMilli: v.number(), unitCostCents: v.number() })),
   }).index("by_numId", ["id"]).index("by_supplier", ["supplierId", "createdAt"]),
+  // local purchase orders sent to suppliers; receiving against one creates a normal purchase (goods received)
+  lpos: defineTable({
+    id: v.number(), number: v.string(), supplierId: v.number(),
+    status: v.union(v.literal("draft"), v.literal("sent"), v.literal("partial"), v.literal("received"), v.literal("cancelled")),
+    note: v.optional(v.string()), expectedOn: v.optional(v.string()), userId: v.number(), createdAt: v.number(), sentAt: v.optional(v.number()),
+    items: v.array(v.object({ productId: v.number(), name: v.string(), unit: v.string(), qtyMilli: v.number(), unitCostCents: v.number(), receivedMilli: v.number() })),
+    purchaseIds: v.array(v.number()),
+  }).index("by_numId", ["id"]).index("by_supplier", ["supplierId", "createdAt"]),
   supplierLedger: defineTable({
     id: v.number(), supplierId: v.number(), amountCents: v.number(), type: v.string(), refId: v.optional(v.number()),
     method: v.optional(v.string()), note: v.optional(v.string()), userId: v.optional(v.number()), createdAt: v.number(),

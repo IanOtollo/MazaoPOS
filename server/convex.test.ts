@@ -491,6 +491,267 @@ try {
   await api("PATCH", `/api/products/${pipe.body.id}`, { reorderLevelMilli: 0 });
 
 
+  // =================== inventory manager: filters, sorting, product detail, ledger, categories ===================
+  {
+    const cat = await api("POST", "/api/categories", { name: "InvTest" });
+    const catId = cat.body.id as number;
+    const mk = async (sku: string, name: string, cost: number, retail: number, reorder: number) => {
+      const r = await api("POST", "/api/products", { sku, name, unit: "pc", vatCode: "E", costCents: cost, priceRetailCents: retail, reorderLevelMilli: reorder, categoryId: catId });
+      assert.equal(r.status, 200, JSON.stringify(r.body));
+      return r.body.id as number;
+    };
+    const A = await mk("INV-A", "Inv Alpha", 10000, 15000, 5000);
+    const B = await mk("INV-B", "Inv Bravo", 20000, 30000, 10000);
+    const C = await mk("INV-C", "Inv Charlie", 5000, 8000, 0);
+    const D = await mk("INV-D", "Inv Delta", 40000, 50000, 0);
+
+    // Alpha arrives through a delivery (20 pcs, invoice INV-T1) from its own supplier; Bravo 10, Delta 3 in the shop and 2 in the store; Charlie none
+    const isup = await api("POST", "/api/suppliers", { name: "Inv Test Supply", creditDays: 30 });
+    const del = await api("POST", "/api/purchases", { supplierId: isup.body.id, locationId: 1, invoiceNo: "INV-T1", lines: [{ productId: A, qtyMilli: 20000, unitCostCents: 10000 }] });
+    assert.equal(del.status, 200, JSON.stringify(del.body));
+    await api("POST", "/api/stock/receive", { productId: B, locationId: 1, qtyMilli: 10000 });
+    await api("POST", "/api/stock/receive", { productId: D, locationId: 1, qtyMilli: 3000 });
+    await api("POST", "/api/stock/receive", { productId: D, locationId: 2, qtyMilli: 2000 });
+    // the cashier sells 2 Alpha for 300.00
+    const sold = await api("POST", "/api/sales", { items: [{ productId: A, qtyMilli: 2000 }], payments: [{ method: "cash", amountCents: 30000 }] }, cashierTok);
+    assert.equal(sold.status, 200, JSON.stringify(sold.body));
+
+    const page = async (qs: string, tok = token) => (await api("GET", `/api/products/page?categoryId=${catId}&limit=50&${qs}`, undefined, tok)).body as { total: number; items: any[]; summary: any };
+    const ids = (r: { items: any[] }) => r.items.map((p) => p.id);
+
+    // ---- status filters
+    assert.equal((await page("")).total, 4, "all four are in the category");
+    assert.deepEqual(ids(await page("status=in")).sort(), [A, B, D].sort(), "in stock = Alpha, Bravo, Delta");
+    assert.deepEqual(ids(await page("status=out")), [C], "out of stock = Charlie");
+    assert.deepEqual(ids(await page("status=low")), [B], "low = Bravo, which is at its reorder level");
+    assert.deepEqual(ids(await page("status=dead")).sort(), [B, D].sort(), "dead = in stock with no sale in 90 days (Alpha sold today)");
+    assert.equal((await api("GET", "/api/products/page?status=bogus")).status, 400, "an unknown status is refused");
+    assert.equal((await api("GET", "/api/products/page?sort=bogus")).status, 400, "an unknown sort is refused");
+    assert.equal((await page("status=low")).summary.items, 1, "the summary follows the filter");
+
+    // ---- every row carries on-hand and its worth
+    const all = await page("");
+    const rowA = all.items.find((p) => p.id === A);
+    assert.equal(rowA.on_hand_milli, 18000);
+    assert.equal(rowA.value_selling_cents, 270000, "18 x 150.00");
+    assert.equal(rowA.value_cost_cents, 180000, "18 x 100.00");
+    assert.equal(all.items.find((p) => p.id === D).on_hand_milli, 5000, "shop plus store");
+
+    // ---- sorting, both ways
+    assert.deepEqual(ids(await page("sort=value&dir=desc")), [B, A, D, C], "value, largest first");
+    assert.deepEqual(ids(await page("sort=value&dir=asc")), [C, D, A, B], "value, smallest first");
+    assert.deepEqual(ids(await page("sort=stock&dir=desc")), [A, B, D, C], "stock, most first");
+    assert.deepEqual(ids(await page("sort=stock&dir=asc")), [C, D, B, A], "stock, least first");
+    assert.deepEqual(ids(await page("sort=price&dir=asc")), [C, A, B, D], "price, lowest first");
+    assert.deepEqual(ids(await page("sort=price&dir=desc")), [D, B, A, C], "price, highest first");
+    assert.deepEqual(ids(await page("sort=cost&dir=asc")), [C, A, B, D], "cost, lowest first");
+    assert.deepEqual(ids(await page("sort=name&dir=desc")), [D, C, B, A], "name, Z to A");
+    assert.deepEqual(ids(await page("sort=name")), [A, B, C, D], "name, A to Z by default");
+    // a user who cannot see costs gets no cost figures and no cost ordering
+    const blindList = await page("sort=cost&dir=desc", cashierTok);
+    assert.deepEqual(ids(blindList), [D, C, B, A], "cost order is not revealed: falls back to name");
+    assert.equal(blindList.items[0].value_cost_cents, null, "no cost value without products.view_cost");
+    assert.equal(blindList.items[0].cost_cents, 0);
+
+    // ---- one product in full
+    const dA = (await api("GET", `/api/products/${A}`)).body;
+    assert.equal(dA.product.name, "Inv Alpha");
+    assert.equal(dA.stock.reduce((a: number, x: any) => a + x.qty_milli, 0), dA.product.on_hand_milli, "stock by place adds up to on-hand");
+    assert.deepEqual(dA.stock.map((x: any) => [x.location, x.qty_milli]), [["Shop", 18000], ["Store", 0]], "every location is listed");
+    assert.equal(dA.margin_percent, 33.3, "(150 - 100) / 150");
+    assert.equal(dA.status, "ok");
+    assert.equal(dA.sales.sold_30_milli, 2000);
+    assert.equal(dA.sales.sold_90_milli, 2000);
+    assert.equal(dA.sales.sold_all_milli, 2000);
+    assert.equal(dA.sales.revenue_90_cents, 30000);
+    assert.equal(dA.sales.orders_90, 1);
+    assert.equal(dA.sales.avg_price_cents_90, 15000);
+    assert.ok(dA.sales.last_sold_at, "last sold is known");
+    assert.equal(dA.purchases.length, 1);
+    assert.equal(dA.purchases[0].invoice_no, "INV-T1");
+    assert.equal(dA.purchases[0].supplier, "Inv Test Supply");
+    assert.equal(dA.purchases[0].qty_milli, 20000);
+    assert.equal(dA.purchases[0].unit_cost_cents, 10000);
+    assert.deepEqual(dA.lpos_open, [], "nothing on order");
+    assert.deepEqual(dA.movements.map((m: any) => [m.type, m.qty_milli]), [["sale", -2000], ["purchase", 20000]], "newest first");
+    assert.equal(dA.movements[0].ref_type, "sale");
+    assert.equal((await api("GET", `/api/products/${B}`)).body.status, "low");
+    assert.equal((await api("GET", `/api/products/${C}`)).body.status, "out");
+    assert.equal((await api("GET", `/api/products/${D}`)).body.status, "dead");
+    assert.equal((await api("GET", "/api/products/999999")).status, 404, "unknown product");
+    assert.equal((await api("GET", `/api/products/${A}`, undefined, "")).status, 401, "needs a sign-in");
+    // users without cost access: no margin, no cost values anywhere
+    const blindA = (await api("GET", `/api/products/${A}`, undefined, cashierTok)).body;
+    assert.equal(blindA.margin_percent, null, "no margin without products.view_cost");
+    assert.equal(blindA.product.value_cost_cents, null);
+    assert.equal(blindA.purchases[0].unit_cost_cents, null);
+    assert.equal(blindA.movements[1].unit_cost_cents, null);
+
+    // ---- the stock ledger
+    const ledger = async (qs: string, tok = token) => (await api("GET", `/api/stock/ledger?${qs}`, undefined, tok));
+    assert.equal((await ledger(`productId=${A}`, cashierTok)).status, 403, "the ledger needs stock.manage");
+    const lA = (await ledger(`productId=${A}`)).body;
+    assert.equal(lA.total, 2);
+    assert.deepEqual(lA.items.map((m: any) => m.type), ["sale", "purchase"], "newest first");
+    assert.equal(lA.items[0].product, "Inv Alpha");
+    assert.equal(lA.items[0].sku, "INV-A");
+    assert.equal(lA.items[0].location, "Shop");
+    assert.equal(lA.items[1].unit_cost_cents, 10000);
+    assert.equal((await ledger(`productId=${A}&type=sale`)).body.total, 1, "filter by type");
+    assert.equal((await ledger(`productId=${D}&locationId=2`)).body.total, 1, "filter by place: Delta has one receipt in the store");
+    assert.equal((await ledger(`productId=${A}&locationId=2`)).body.total, 0);
+    const p2 = (await ledger(`productId=${A}&limit=1&offset=1`)).body;
+    assert.equal(p2.items.length, 1);
+    assert.equal(p2.total, 2, "the total ignores paging");
+    assert.equal(p2.items[0].type, "purchase", "page two holds the older entry");
+    const today = new Date(Date.now() + 3 * 3600 * 1000).toISOString().slice(0, 10);
+    assert.equal((await ledger(`productId=${A}&from=${today}&to=${today}`)).body.total, 2, "today's entries");
+    assert.equal((await ledger(`productId=${A}&from=2000-01-01&to=2000-01-02`)).body.total, 0, "nothing back in 2000");
+    assert.equal((await ledger("from=2026-02-30")).status, 400, "an impossible date is refused");
+    assert.ok((await ledger("limit=5000")).body.items.length <= 200, "a page never holds more than 200");
+    // a stock clerk without cost access sees no costs in the ledger
+    const stockRole = await api("POST", "/api/roles", { name: "Ledger clerk", description: "Counts stock", permissions: ["stock.manage"] });
+    assert.equal(stockRole.status, 200, JSON.stringify(stockRole.body));
+    assert.equal((await api("POST", "/api/users", { name: "Stan", pin: "3344", roleId: stockRole.body.id })).status, 200);
+    const stanTok = (await api("POST", "/api/auth/login", { pin: "3344" }, "")).body.token as string;
+    const blindLedger = (await ledger(`productId=${A}`, stanTok)).body;
+    assert.equal(blindLedger.total, 2);
+    assert.equal(blindLedger.items[1].unit_cost_cents, null, "no purchase cost without products.view_cost");
+
+    // ---- categories: counts, rename, delete
+    const cats = (await api("GET", "/api/categories")).body as { id: number; name: string; product_count: number }[];
+    assert.equal(cats.find((c) => c.id === catId)!.product_count, 4, "each category knows how many products it holds");
+    assert.equal((await api("PATCH", `/api/categories/${catId}`, { name: "InvTest Renamed" }, cashierTok)).status, 403, "cashier cannot rename");
+    assert.equal((await api("PATCH", `/api/categories/${catId}`, { name: "   " })).status, 400, "a name is required");
+    assert.equal((await api("PATCH", `/api/categories/${catId}`, { name: "Tools" })).status, 409, "that name is taken");
+    assert.equal((await api("PATCH", "/api/categories/999999", { name: "Ghost" })).status, 404);
+    assert.equal((await api("PATCH", `/api/categories/${catId}`, { name: "InvTest Renamed" })).status, 200);
+    assert.equal((await api("PATCH", `/api/categories/${catId}`, { name: "InvTest Renamed" })).status, 200, "keeping its own name is fine");
+    assert.equal((await api("GET", `/api/products/${A}`)).body.product.category, "InvTest Renamed", "products show the new name");
+    const del409 = await api("DELETE", `/api/categories/${catId}`);
+    assert.equal(del409.status, 409);
+    assert.match(del409.body.error, /4 products use this category\. Move them first\./);
+    assert.equal((await api("DELETE", `/api/categories/${catId}`, undefined, cashierTok)).status, 403);
+    const empty = await api("POST", "/api/categories", { name: "Empty Cat" });
+    assert.equal((await api("DELETE", `/api/categories/${empty.body.id}`)).status, 200, "an empty category can go");
+    assert.equal((await api("DELETE", `/api/categories/${empty.body.id}`)).status, 404, "and it is gone");
+    assert.ok(!((await api("GET", "/api/categories")).body as any[]).some((c) => c.name === "Empty Cat"));
+  }
+
+  // =================== fast and slow movers ===================
+  {
+    assert.equal((await api("GET", "/api/reports/movers", undefined, cashierTok)).status, 403, "cashier cannot open reports");
+    const m = await api("GET", "/api/reports/movers?days=30");
+    assert.equal(m.status, 200, JSON.stringify(m.body).slice(0, 200));
+    assert.equal(m.body.days, 30);
+    assert.ok(m.body.fast.length >= 1, "something has sold");
+    assert.ok(m.body.fast.some((x: any) => x.id === nail.body.id), "the nails sold earlier are a fast mover");
+    const rev = m.body.fast.map((x: any) => x.revenue_cents);
+    assert.deepEqual(rev, [...rev].sort((a: number, b: number) => b - a), "fast movers are ranked by sales value");
+    assert.ok(m.body.fast.every((x: any) => x.sold_milli > 0), "only items that sold are fast movers");
+    assert.ok(m.body.slow.every((x: any) => x.on_hand_milli > 0), "slow movers are items that are in stock");
+    const srev = m.body.slow.map((x: any) => x.revenue_cents);
+    assert.deepEqual(srev, [...srev].sort((a: number, b: number) => a - b), "slow movers are ranked from least sold");
+    assert.ok(m.body.totals.items_in_stock >= m.body.totals.in_stock_unsold, "totals are consistent");
+    assert.equal((await api("GET", "/api/reports/movers?days=99999")).body.days, 730, "the period is capped");
+  }
+
+  // =================== local purchase orders (LPO) ===================
+  {
+    const lpoSup = (await api("POST", "/api/suppliers", { name: "LPO Supplies", creditDays: 14 })).body.id as number;
+    const prod = async (sku: string) => (await api("GET", `/api/products/page?q=${sku}`)).body.items[0];
+    const owed = async () => (await api("GET", `/api/suppliers/${lpoSup}`)).body.owed_cents as number;
+    const lines = [
+      { productId: pipe.body.id, qtyMilli: 10000, unitCostCents: 21000 },
+      { productId: nail.body.id, qtyMilli: 5000, unitCostCents: 12000 },
+    ];
+
+    assert.equal((await api("GET", "/api/lpos", undefined, cashierTok)).status, 403, "cashier cannot see orders");
+    assert.equal((await api("POST", "/api/lpos", { supplierId: lpoSup, lines }, cashierTok)).status, 403, "cashier cannot make an order");
+    assert.equal((await api("POST", "/api/lpos", { supplierId: lpoSup, lines: [] })).status, 400, "an order needs items");
+    assert.equal((await api("POST", "/api/lpos", { supplierId: lpoSup, lines: [lines[0], lines[0]] })).status, 400, "the same item twice is refused");
+    assert.equal((await api("POST", "/api/lpos", { supplierId: 999999, lines })).status, 400, "unknown supplier is refused");
+    assert.equal((await api("POST", "/api/lpos", { supplierId: lpoSup, lines, expectedOn: "next week" })).status, 400, "bad expected date is refused");
+
+    // a draft: made, read back, edited
+    const a = await api("POST", "/api/lpos", { supplierId: lpoSup, lines, note: "Deliver to the store" });
+    assert.equal(a.status, 200, JSON.stringify(a.body));
+    let det = await api("GET", `/api/lpos/${a.body.id}`);
+    assert.equal(det.body.number, "LPO-0001", "numbers count up from LPO-0001");
+    assert.equal(det.body.status, "draft");
+    assert.equal(det.body.total_cents, 270000, "10 x 210.00 + 5 x 120.00");
+    assert.equal(det.body.supplier, "LPO Supplies");
+    const edited = await api("PUT", `/api/lpos/${a.body.id}`, {
+      lines: [lines[0], { productId: nail.body.id, qtyMilli: 8000, unitCostCents: 12000 }], expectedOn: "2030-01-31",
+    });
+    assert.equal(edited.status, 200, JSON.stringify(edited.body));
+    det = await api("GET", `/api/lpos/${a.body.id}`);
+    assert.equal(det.body.total_cents, 306000, "10 x 210.00 + 8 x 120.00 after the edit");
+    assert.equal(det.body.expected_on, "2030-01-31");
+    assert.equal((await api("PUT", `/api/lpos/${a.body.id}`, { lines: [] })).status, 400, "an edit cannot empty the order");
+
+    // a draft cannot receive goods; once sent it is locked for editing
+    const rcv = (id: number, body: object) => api("POST", `/api/lpos/${id}/receive`, body);
+    assert.equal((await rcv(a.body.id, { lines: [{ productId: pipe.body.id, qtyMilli: 1000 }] })).status, 409, "a draft cannot receive goods");
+    assert.equal((await api("PATCH", `/api/lpos/${a.body.id}`, { status: "sent" })).status, 200);
+    assert.equal((await api("PATCH", `/api/lpos/${a.body.id}`, { status: "sent" })).status, 409, "already sent");
+    assert.equal((await api("PUT", `/api/lpos/${a.body.id}`, { lines })).status, 409, "a sent order cannot be edited");
+    assert.equal((await api("PATCH", `/api/lpos/${a.body.id}`, { status: "received" })).status, 409, "only a partly received order can be closed");
+    assert.equal((await rcv(a.body.id, { lines: [{ productId: cement.body.id, qtyMilli: 1000 }] })).status, 400, "an item that is not on the order is refused");
+
+    // part delivery: 4 of the 10 m of pipe, 200.00 paid on the spot
+    const pipeBefore = (await prod("PVC-1")).stock_shop as number;
+    const part = await rcv(a.body.id, { lines: [{ productId: pipe.body.id, qtyMilli: 4000 }], invoiceNo: "SUP-9", paidCents: 20000, payMethod: "cash" });
+    assert.equal(part.status, 200, JSON.stringify(part.body));
+    assert.equal(part.body.status, "partial");
+    assert.equal((await prod("PVC-1")).stock_shop, pipeBefore + 4000, "stock rose by exactly what arrived");
+    assert.equal((await prod("PVC-1")).cost_cents, 21000, "the order price became the cost price");
+    assert.equal(await owed(), 84000 - 20000, "4 x 210.00 delivered minus 200.00 paid");
+    det = await api("GET", `/api/lpos/${a.body.id}`);
+    assert.equal(det.body.status, "partial");
+    assert.equal(det.body.items.find((i: any) => i.product_id === pipe.body.id).received_milli, 4000);
+    assert.equal(det.body.purchase_ids.length, 1, "the delivery is linked to the order");
+    assert.equal((await rcv(a.body.id, { lines: [{ productId: pipe.body.id, qtyMilli: 7000 }] })).status, 400, "more than is still due is refused");
+    assert.equal((await api("PATCH", `/api/lpos/${a.body.id}`, { status: "cancelled" })).status, 409, "a partly delivered order cannot be cancelled");
+
+    // the rest arrives: the order completes
+    const nailBefore = (await prod("NAIL-3")).stock_shop as number;
+    const rest = await rcv(a.body.id, { lines: [{ productId: pipe.body.id, qtyMilli: 6000 }, { productId: nail.body.id, qtyMilli: 8000 }] });
+    assert.equal(rest.status, 200, JSON.stringify(rest.body));
+    assert.equal(rest.body.status, "received");
+    assert.equal((await prod("NAIL-3")).stock_shop, nailBefore + 8000);
+    assert.equal(await owed(), 64000 + 126000 + 96000, "everything delivered is now owed, less the 200.00 paid");
+    assert.equal((await api("PATCH", `/api/lpos/${a.body.id}`, { status: "cancelled" })).status, 409, "a received order cannot be cancelled");
+    assert.equal((await rcv(a.body.id, { lines: [{ productId: pipe.body.id, qtyMilli: 1000 }] })).status, 409, "a received order takes no more goods");
+
+    // a second order, sent and then cancelled before anything arrived
+    const b = await api("POST", "/api/lpos", { supplierId: lpoSup, lines: [lines[0]], send: true });
+    assert.equal(b.status, 200, JSON.stringify(b.body));
+    det = await api("GET", `/api/lpos/${b.body.id}`);
+    assert.equal(det.body.number, "LPO-0002");
+    assert.equal(det.body.status, "sent");
+    assert.equal((await api("PATCH", `/api/lpos/${b.body.id}`, { status: "cancelled" })).status, 200);
+    assert.equal((await api("GET", `/api/lpos/${b.body.id}`)).body.status, "cancelled");
+    assert.equal((await rcv(b.body.id, { lines: [{ productId: pipe.body.id, qtyMilli: 1000 }] })).status, 409, "a cancelled order takes no goods");
+
+    // a third stays a draft, a fourth is closed short after a part delivery
+    const c = await api("POST", "/api/lpos", { supplierId: lpoSup, lines: [lines[1]] });
+    assert.equal((await api("GET", `/api/lpos/${c.body.id}`)).body.number, "LPO-0003");
+    const d = await api("POST", "/api/lpos", { supplierId: lpoSup, lines: [{ productId: nail.body.id, qtyMilli: 3000, unitCostCents: 12000 }], send: true });
+    assert.equal((await rcv(d.body.id, { lines: [{ productId: nail.body.id, qtyMilli: 1000 }] })).body.status, "partial");
+    assert.equal((await api("PATCH", `/api/lpos/${d.body.id}`, { status: "received" })).status, 200, "a short delivery can be closed");
+    assert.equal((await api("GET", `/api/lpos/${d.body.id}`)).body.status, "received");
+
+    // the lists
+    const open = await api("GET", "/api/lpos?status=open");
+    assert.deepEqual(open.body.map((o: any) => o.number), ["LPO-0003"], "only the untouched draft is still open");
+    assert.ok(open.body.every((o: any) => ["draft", "sent", "partial"].includes(o.status)));
+    assert.deepEqual((await api("GET", "/api/lpos?status=cancelled")).body.map((o: any) => o.number), ["LPO-0002"]);
+    assert.deepEqual((await api("GET", "/api/lpos?status=received")).body.map((o: any) => o.number), ["LPO-0004", "LPO-0001"], "newest first");
+    assert.equal((await api("GET", "/api/lpos")).body.length, 4, "all four orders");
+    assert.equal((await api("GET", "/api/lpos/999999")).status, 404, "unknown order");
+  }
+
   // =================== selling in several units ===================
   // copper wire is priced per metre (90.00, cost 60.00); it is also sold by the roll (50 m, special price 4,200.00) and half roll (25 m)
   const wire = await api("POST", "/api/products", { sku: "CU-WIRE", name: "Copper wire 2.5mm", unit: "m", allowFraction: true, vatCode: "A", costCents: 6000, priceRetailCents: 9000, itemClassCode: "5010001500", qtyUnitCode: "MTR", packUnitCode: "RL" });
