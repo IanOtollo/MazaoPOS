@@ -37,6 +37,9 @@ export default function Login({ onLogin }: { onLogin: (u: User, token: string) =
 
   useEffect(() => {
     const h = (e: KeyboardEvent) => {
+      // the pad listens to the whole page, so step aside while a window is open or a button/link has focus
+      if (document.querySelector('[aria-modal="true"]')) return;
+      if (e.key === "Enter" && (e.target as HTMLElement | null)?.closest?.("footer, a")) return; // Enter belongs to the focused footer button or link
       if (/^\d$/.test(e.key)) press(e.key);
       else if (e.key === "Backspace") setPin((p) => p.slice(0, -1));
       else if (e.key === "Enter") submit();
@@ -63,10 +66,10 @@ export default function Login({ onLogin }: { onLogin: (u: User, token: string) =
           </div>
 
           <div className="grid grid-cols-3 gap-2">
-            {["1", "2", "3", "4", "5", "6", "7", "8", "9"].map((d) => <button key={d} onClick={() => press(d)} className={key}>{d}</button>)}
+            {["1", "2", "3", "4", "5", "6", "7", "8", "9"].map((d) => <button key={d} onMouseDown={(e) => e.preventDefault()} onClick={() => press(d)} className={key}>{d}</button>)}
             <span />
-            <button onClick={() => press("0")} className={key}>0</button>
-            <button onClick={() => setPin((p) => p.slice(0, -1))} aria-label="Delete last digit" className={`${key} flex items-center justify-center`}><Delete className="size-5" /></button>
+            <button onMouseDown={(e) => e.preventDefault()} onClick={() => press("0")} className={key}>0</button>
+            <button onMouseDown={(e) => e.preventDefault()} onClick={() => setPin((p) => p.slice(0, -1))} aria-label="Delete last digit" className={`${key} flex items-center justify-center`}><Delete className="size-5" /></button>
           </div>
 
           <button onClick={() => submit()} disabled={pin.length < 4 || busy}
