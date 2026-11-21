@@ -3,7 +3,9 @@ import type { Permission } from "../../../shared/permissions";
 
 // Where the server lives. Empty means "the same address as this page" (the shop computer, or the dev proxy).
 // When the screens are hosted separately (for example on Vercel) VITE_API_URL points at the server instead.
-export const API_BASE = ((import.meta.env.VITE_API_URL as string | undefined) ?? "").replace(/\/+$/, "");
+// VITE_API_URL wins. Otherwise use the Convex address the deploy step provides (its HTTP address ends .convex.site).
+const fromConvex = ((import.meta.env.VITE_CONVEX_URL as string | undefined) ?? "").replace(".convex.cloud", ".convex.site");
+export const API_BASE = ((import.meta.env.VITE_API_URL as string | undefined) || fromConvex).replace(/\/+$/, "");
 export const apiUrl = (path: string) => `${API_BASE}${path}`;
 
 const TOKEN_KEY = "pos_token";
