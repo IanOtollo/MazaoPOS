@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { get, todayEAT } from "./api";
+import { useLive } from "./live";
 
 export interface Totals { sales: number; sales_cents: number; net_cents: number; vat_cents: number; discount_cents: number; refund_cents: number; cogs_cents: number | null; profit_cents: number | null }
 export interface DashData {
@@ -27,6 +28,8 @@ export function useRange() {
   const [custom, setCustom] = useState<{ from: string; to: string } | null>(null);
   const [data, setData] = useState<DashData | null>(null);
   const [err, setErr] = useState("");
+  const [tick, setTick] = useState(0);
+  useLive(["sales", "stock", "customers", "shifts", "dashboard"], () => setTick((t) => t + 1));
 
   useEffect(() => {
     // while a custom range is half-typed or inverted, keep showing the last good result
@@ -36,7 +39,7 @@ export function useRange() {
     const url = custom ? `/api/dashboard?from=${custom.from}&to=${custom.to}` : `/api/dashboard?days=${days}`;
     get<DashData>(url).then((r) => live && setData(r)).catch((e) => live && setErr(e.message));
     return () => { live = false; };
-  }, [days, custom]);
+  }, [days, custom, tick]);
 
   const span = data?.days ?? days;
   return {

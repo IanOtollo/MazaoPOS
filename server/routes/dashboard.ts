@@ -113,7 +113,7 @@ export function dashboardRoutes(app: FastifyInstance) {
     const lowSql = `SELECT * FROM (
         SELECT p.id, p.sku, p.name, p.unit, p.reorder_level_milli,
           COALESCE((SELECT SUM(qty_milli) FROM stock_movements WHERE product_id=p.id),0) AS stock_milli
-        FROM products p WHERE p.active=1) WHERE stock_milli <= reorder_level_milli ORDER BY stock_milli`;
+        FROM products p WHERE p.active=1) WHERE reorder_level_milli > 0 AND stock_milli <= reorder_level_milli ORDER BY stock_milli`;
     const lowAll = db.prepare(lowSql).all() as { id: number }[];
 
     const owing = db

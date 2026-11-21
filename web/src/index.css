@@ -51,5 +51,9 @@ button:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 2
   body * { visibility: hidden; }
   .receipt, .receipt * { visibility: visible; }
   .receipt { position: absolute; left: 0; top: 0; }
+  /* customer statements print on A4 (named page) while receipts stay 80mm */
+  .print-area, .print-area * { visibility: visible; }
+  .print-area { position: absolute; left: 0; top: 0; width: 100%; page: statement; }
+  @page statement { size: A4; margin: 14mm; }
   @page { size: 80mm auto; margin: 2mm; }
 }

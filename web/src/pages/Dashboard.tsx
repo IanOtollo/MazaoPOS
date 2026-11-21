@@ -49,7 +49,7 @@ export default function Dashboard() {
                 ? <p className="text-slate-500 py-6 text-center">Nothing needs attention right now.</p>
                 : (
                   <ul className="divide-y divide-slate-100 -my-2">
-                    {d.lowStock.count > 0 && <Attention to="/products" title={`${d.lowStock.count} ${d.lowStock.count === 1 ? "item is" : "items are"} low on stock`} sub={d.lowStock.items.slice(0, 2).map((i) => i.name).join(", ")} />}
+                    {d.lowStock.count > 0 && <Attention to="/inventory" title={`${d.lowStock.count} ${d.lowStock.count === 1 ? "item is" : "items are"} low on stock`} sub={d.lowStock.items.slice(0, 2).map((i) => i.name).join(", ")} />}
                     {d.owing.count > 0 && <Attention to="/customers" title={`${d.owing.count} ${d.owing.count === 1 ? "customer owes" : "customers owe"} you KES ${kes0(d.owing.total_cents)}`} sub={d.owing.top[0] ? `Largest: ${d.owing.top[0].name}` : undefined} />}
                     {d.openShifts.length > 0 && <Attention to="/shift" title={`${d.openShifts.length} ${d.openShifts.length === 1 ? "till is" : "tills are"} open`} sub={d.openShifts.map((s) => `${s.cashier} since ${fmtTime(s.opened_at)}`).join(", ")} />}
                   </ul>

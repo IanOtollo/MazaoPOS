@@ -2,6 +2,7 @@
 import { spawn, spawnSync } from "node:child_process";
 import { rmSync } from "node:fs";
 import assert from "node:assert/strict";
+import { DatabaseSync } from "node:sqlite";
 
 const PORT = 4100;
 const DB = "data/test.db";
@@ -159,7 +160,7 @@ try {
   // ...and cannot see buying prices
   const seen = await api("GET", "/api/products?q=nails", undefined, cashierTok);
   assert.equal(seen.body[0].cost_cents, 0, "cost hidden from cashier");
-  assert.ok((await api("GET", "/api/products?q=nails")).body[0].cost_cents > 0, "owner sees cost");
+  assert.ok((await api("GET", "/api/products?q=nails")).body[0].cost_cents > 0, "admin sees cost");
 
   // manager: can approve a cashier's discount with their PIN, but cannot manage roles or staff
   const mgr = await api("POST", "/api/users", { name: "Otieno", pin: "4321", roleId: roleId("Manager") });
@@ -188,14 +189,14 @@ try {
   await api("PUT", `/api/roles/${role.body.id}`, { name: "Stock clerk", description: "", permissions: ["products.view_cost"] });
   assert.equal((await api("POST", "/api/stock/receive", { productId: nail.body.id, locationId: 1, qtyMilli: 1000 }, clerkTok)).status, 403, "permission removed instantly");
 
-  // Owner role is locked; the owner cannot lock themselves out
-  assert.equal((await api("PUT", `/api/roles/${roleId("Owner")}`, { name: "Owner", description: "", permissions: [] })).status, 400, "owner role locked");
+  // Admin role is locked; the admin cannot lock themselves out
+  assert.equal((await api("PUT", `/api/roles/${roleId("Admin")}`, { name: "Admin", description: "", permissions: [] })).status, 400, "admin role locked");
   assert.equal((await api("PATCH", "/api/users/1", { roleId: roleId("Cashier") })).status, 400, "cannot demote the last role manager");
   assert.equal((await api("PATCH", "/api/users/1", { active: false })).status, 400, "cannot disable yourself");
-  // a manager cannot reset the Owner's PIN (privilege escalation)
-  await api("PUT", `/api/roles/${roleId("Manager")}`, { name: "Manager", description: "", permissions: ["users.manage", "sales.create"] }); // owner grants users.manage
+  // a manager cannot reset the Admin's PIN (privilege escalation)
+  await api("PUT", `/api/roles/${roleId("Manager")}`, { name: "Manager", description: "", permissions: ["users.manage", "sales.create"] }); // admin grants users.manage
   assert.equal((await api("PATCH", "/api/users/1", { pin: "9999" }, mgrTok)).status, 403, "cannot reset a more powerful user's PIN");
-  assert.equal((await api("POST", "/api/users", { name: "Boss2", pin: "1357", roleId: roleId("Owner") }, mgrTok)).status, 403, "cannot assign a role above your own");
+  assert.equal((await api("POST", "/api/users", { name: "Boss2", pin: "1357", roleId: roleId("Admin") }, mgrTok)).status, 403, "cannot assign a role above your own");
 
   // =================== product import ===================
   const rowsIn = [
@@ -255,7 +256,7 @@ try {
   assert.ok(dash.body.owing.total_cents > 0 && dash.body.owing.top[0].name === "Kamau Builders", "customers owing listed");
   assert.equal(dash.body.hours.length, 24);
   assert.ok(dash.body.topItems.length > 0 && dash.body.cashiers.length > 0);
-  assert.ok(dash.body.stockValue.cost_cents > 0, "owner sees stock value");
+  assert.ok(dash.body.stockValue.cost_cents > 0, "admin sees stock value");
   assert.equal((await api("GET", "/api/dashboard?days=1")).body.series.length, 1, "today view");
   // reports permission without cost permission: no profit and no stock cost
   const analyst = await api("POST", "/api/roles", { name: "Analyst", description: "", permissions: ["reports.view"] });
@@ -288,21 +289,201 @@ try {
 
   // =================== the admin does not use the till ===================
   const me = await api("GET", "/api/me");
-  assert.ok(!me.body.permissions.includes("sales.create"), "owner has no till permission");
-  assert.ok(me.body.permissions.includes("roles.manage") && me.body.permissions.includes("sales.approve"), "owner keeps every back-office permission");
-  const ownerSale = await api("POST", "/api/sales", { items: [{ productId: nail.body.id, qtyMilli: 1000 }], payments: [{ method: "cash", amountCents: 15000 }] });
-  assert.equal(ownerSale.status, 403, "owner cannot sell");
-  assert.equal((await api("POST", "/api/shifts/open", { floatCents: 0 })).status, 403, "owner cannot open a till shift");
-  assert.equal((await api("POST", "/api/sales/1/refund", { items: [{ saleItemId: 1, qtyMilli: 1000 }], method: "cash", reason: "x" })).status, 403, "owner cannot process refunds at a till");
-  // ...but the owner can still approve a cashier's discount with their PIN (done earlier with PIN 1234)
-  const ownerRole = (await api("GET", "/api/roles")).body.find((x: any) => x.name === "Owner");
-  assert.ok(!ownerRole.permissions.includes("sales.create"), "Owner role lists no till permission");
-  assert.equal(ownerRole.permissions.length, 16, "Owner holds the 16 back-office permissions");
+  assert.ok(!me.body.permissions.includes("sales.create"), "admin has no till permission");
+  assert.ok(me.body.permissions.includes("roles.manage") && me.body.permissions.includes("sales.approve"), "admin keeps every back-office permission");
+  const adminSale = await api("POST", "/api/sales", { items: [{ productId: nail.body.id, qtyMilli: 1000 }], payments: [{ method: "cash", amountCents: 15000 }] });
+  assert.equal(adminSale.status, 403, "admin cannot sell");
+  assert.equal((await api("POST", "/api/shifts/open", { floatCents: 0 })).status, 403, "admin cannot open a till shift");
+  assert.equal((await api("POST", "/api/sales/1/refund", { items: [{ saleItemId: 1, qtyMilli: 1000 }], method: "cash", reason: "x" })).status, 403, "admin cannot process refunds at a till");
+  // ...but the admin can still approve a cashier's discount with their PIN (done earlier with PIN 1234)
+  const adminRole = (await api("GET", "/api/roles")).body.find((x: any) => x.name === "Admin");
+  assert.ok(!adminRole.permissions.includes("sales.create"), "Admin role lists no till permission");
+  assert.equal(adminRole.permissions.length, 17, "Admin holds the 17 back-office permissions");
   // managers (small shops) and cashiers can still sell
   assert.equal((await api("POST", "/api/shifts/open", { floatCents: 0 }, mgrTok)).status, 200, "manager can open a till shift");
   // reports detail used by the Reports screen
   const detail = await api("GET", "/api/dashboard?days=7");
   assert.ok(Array.isArray(detail.body.byVat) && detail.body.byVat.length > 0, "VAT breakdown present");
+
+
+  // =================== customers who owe: ageing, follow-ups, credit control ===================
+  const lp = await api("POST", "/api/customers", { name: "Late Payer", phone: "0700 111 222", tier: "retail", creditLimitCents: 500000, creditDays: 30 });
+  assert.equal(lp.status, 200, JSON.stringify(lp.body));
+  const lpId = lp.body.id as number;
+  {
+    // back-date two debts straight in the database: KES 1,000 taken 45 days ago and KES 500 taken 10 days ago
+    const raw = new DatabaseSync(DB);
+    raw.exec("PRAGMA busy_timeout = 5000");
+    const ago = (d: number) => new Date(Date.now() - d * 86400000).toISOString();
+    const ins = raw.prepare("INSERT INTO customer_ledger (customer_id,amount_cents,type,created_at) VALUES (?,?,?,?)");
+    ins.run(lpId, 100000, "credit_sale", ago(45));
+    ins.run(lpId, 50000, "credit_sale", ago(10));
+    raw.close();
+  }
+  // a part payment settles the OLDEST debt first
+  assert.equal((await api("POST", `/api/customers/${lpId}/payment`, { amountCents: 30000, method: "cash" })).status, 200);
+  let acct = await api("GET", `/api/customers/${lpId}/account`);
+  assert.equal(acct.status, 200);
+  assert.equal(acct.body.balance_cents, 120000, "1,500 owed minus 300 paid");
+  assert.equal(acct.body.ageing.balance_cents, 120000);
+  assert.equal(acct.body.ageing.buckets.d1_30, 70000, "the old debt is 15 days past its 30-day terms, with the payment taken off it");
+  assert.equal(acct.body.ageing.buckets.current, 50000, "the newer debt is not yet due");
+  assert.equal(acct.body.ageing.overdue_cents, 70000);
+  assert.equal(acct.body.ageing.max_days_overdue, 15);
+  assert.equal(acct.body.statement[0].balance_cents, 120000, "statement shows a running balance, newest first");
+  assert.equal(acct.body.statement.at(-1).balance_cents, 100000, "oldest line first in the running balance");
+
+  // the owing list
+  let rec = await api("GET", "/api/receivables");
+  const row = rec.body.customers.find((c: any) => c.id === lpId);
+  assert.ok(row, "Late Payer is on the owing list");
+  assert.equal(row.overdue_cents, 70000);
+  assert.equal(row.max_days_overdue, 15);
+  assert.ok(rec.body.totals.overdue_cents >= 70000 && rec.body.totals.owed_cents >= 120000);
+  assert.equal(rec.body.customers.some((c: any) => c.balance_cents <= 0), false, "only people who owe appear");
+
+  // follow-ups: cashiers cannot log them; a missed promise is detected, a kept one is not
+  assert.equal((await api("POST", `/api/customers/${lpId}/notes`, { kind: "call", body: "x" }, cashierTok)).status, 403, "cashier cannot log follow-ups");
+  assert.equal((await api("POST", `/api/customers/${lpId}/notes`, { kind: "call", body: "" })).status, 400, "an empty note is refused");
+  assert.equal((await api("POST", `/api/customers/${lpId}/notes`, { kind: "promise", body: "" })).status, 400, "a promise needs a date");
+  assert.equal((await api("POST", `/api/customers/${lpId}/notes`, { kind: "call", body: "Phoned, says cheque on Friday" })).status, 200);
+  const yesterday = new Date(Date.now() + 3 * 3600000 - 86400000).toISOString().slice(0, 10);
+  assert.equal((await api("POST", `/api/customers/${lpId}/notes`, { kind: "promise", promiseDate: yesterday, promiseCents: 70000 })).status, 200);
+  rec = await api("GET", "/api/receivables");
+  assert.equal(rec.body.customers.find((c: any) => c.id === lpId).promise_broken, true, "promised yesterday, paid nothing since");
+  await api("POST", `/api/customers/${lpId}/payment`, { amountCents: 70000, method: "mpesa", reference: "SHK123" });
+  rec = await api("GET", "/api/receivables");
+  assert.equal(rec.body.customers.find((c: any) => c.id === lpId).promise_broken, false, "promise kept once the money arrived");
+  acct = await api("GET", `/api/customers/${lpId}/account`);
+  assert.equal(acct.body.notes.length, 2, "both follow-ups are on file");
+  assert.equal(acct.body.ageing.overdue_cents, 0, "the overdue debt is now fully paid");
+  assert.equal(acct.body.balance_cents, 50000);
+
+  // credit control: optionally refuse more credit to badly overdue customers
+  {
+    const raw = new DatabaseSync(DB);
+    raw.exec("PRAGMA busy_timeout = 5000");
+    raw.prepare("INSERT INTO customer_ledger (customer_id,amount_cents,type,created_at) VALUES (?,?,?,?)").run(lpId, 80000, "credit_sale", new Date(Date.now() - 60 * 86400000).toISOString());
+    raw.close();
+  }
+  const creditSale = () => api("POST", "/api/sales", { items: [{ productId: nail.body.id, qtyMilli: 1000 }], customerId: lpId, payments: [{ method: "credit", amountCents: 15000 }] }, cashierTok);
+  assert.equal((await creditSale()).status, 200, "with the rule off, credit is still given");
+  assert.equal((await api("PUT", "/api/settings", { block_credit_overdue_days: "10" })).status, 200);
+  const blocked = await creditSale();
+  assert.equal(blocked.status, 409, "overdue customer is refused credit");
+  assert.match(blocked.body.error, /overdue/i);
+  assert.equal((await api("PUT", "/api/settings", { block_credit_overdue_days: "0" })).status, 200);
+
+  // credit terms are editable and validated
+  assert.equal((await api("PATCH", `/api/customers/${lpId}`, { creditDays: 14 })).status, 200);
+  assert.equal((await api("GET", `/api/customers/${lpId}/account`)).body.customer.credit_days, 14);
+  assert.equal((await api("PATCH", `/api/customers/${lpId}`, { creditDays: 999 })).status, 400, "terms are capped at a year");
+
+
+  // =================== live updates ===================
+  assert.equal((await fetch(base + "/api/events")).status, 401, "the live channel needs a sign-in");
+  {
+    const ac = new AbortController();
+    const res = await fetch(base + "/api/events", { headers: { authorization: "Bearer " + token }, signal: ac.signal });
+    assert.equal(res.status, 200);
+    assert.match(res.headers.get("content-type") ?? "", /text\/event-stream/);
+    let seen = "";
+    void (async () => {
+      const reader = res.body!.getReader();
+      const dec = new TextDecoder();
+      try { for (;;) { const { done, value } = await reader.read(); if (done) break; seen += dec.decode(value); } } catch { /* aborted at the end */ }
+    })();
+    const waitFor = async (fn: () => boolean, label: string) => {
+      for (let i = 0; i < 40 && !fn(); i++) await new Promise((r) => setTimeout(r, 100));
+      assert.ok(fn(), "no live event for: " + label + "; saw: " + JSON.stringify(seen));
+    };
+    await new Promise((r) => setTimeout(r, 200));
+
+    await api("PUT", "/api/settings", { receipt_footer: "Thank you" });
+    await waitFor(() => seen.includes('"settings"'), "a settings change");
+
+    const before = seen.length;
+    const bad = await api("POST", "/api/sales", { items: [{ productId: nail.body.id, qtyMilli: 1000 }], payments: [{ method: "cash", amountCents: 1 }] }, cashierTok);
+    assert.equal(bad.status, 400);
+    await new Promise((r) => setTimeout(r, 500));
+    assert.equal(seen.length, before, "a failed request must not announce a change");
+
+    const ok = await api("POST", "/api/sales", { items: [{ productId: nail.body.id, qtyMilli: 1000 }], payments: [{ method: "cash", amountCents: 15000 }] }, cashierTok);
+    assert.equal(ok.status, 200, JSON.stringify(ok.body));
+    await waitFor(() => seen.includes('"sales"') && seen.includes('"stock"') && seen.includes('"dashboard"'), "a sale (sales, stock and dashboard)");
+
+    await api("GET", "/api/products?q=x");
+    const afterRead = seen.length;
+    await new Promise((r) => setTimeout(r, 300));
+    assert.equal(seen.length, afterRead, "reading data announces nothing");
+    ac.abort();
+  }
+
+
+  // =================== suppliers and buying ===================
+  assert.equal((await api("GET", "/api/suppliers", undefined, cashierTok)).status, 403, "cashier cannot see suppliers");
+  assert.equal((await api("GET", "/api/suppliers", undefined, analystTok)).status, 403, "reports permission does not include suppliers");
+  const sup = await api("POST", "/api/suppliers", { name: "AquaBase Ltd", phone: "0711 000 111", creditDays: 30 });
+  assert.equal(sup.status, 200, JSON.stringify(sup.body));
+  const supId = sup.body.id as number;
+  assert.equal((await api("POST", "/api/suppliers", { name: "" })).status, 400, "a supplier needs a name");
+
+  // a delivery: 10 m of pipe at 200.00 and 20 kg of nails at 110.00 = 4,200.00; 1,000.00 paid on the spot
+  const pipeBefore = (await api("GET", "/api/products?q=PVC-1")).body[0];
+  const po = await api("POST", "/api/purchases", {
+    supplierId: supId, invoiceNo: "INV-77", locationId: 1, paidCents: 100000, payMethod: "cash",
+    lines: [{ productId: pipe.body.id, qtyMilli: 10000, unitCostCents: 20000 }, { productId: nail.body.id, qtyMilli: 20000, unitCostCents: 11000 }],
+  });
+  assert.equal(po.status, 200, JSON.stringify(po.body));
+  const pipeAfter = (await api("GET", "/api/products?q=PVC-1")).body[0];
+  assert.equal(pipeAfter.stock_shop, pipeBefore.stock_shop + 10000, "stock rose by the delivered quantity");
+  assert.equal((await api("GET", "/api/products?q=NAIL-3")).body[0].cost_cents, 11000, "the new buying price became the cost price");
+  let sd = await api("GET", `/api/suppliers/${supId}`);
+  assert.equal(sd.body.owed_cents, 320000, "4,200 delivered minus 1,000 paid");
+  assert.equal(sd.body.statement[0].balance_cents, 320000);
+  assert.equal(sd.body.deliveries[0].invoice_no, "INV-77");
+  assert.equal(sd.body.deliveries[0].total_cents, 420000);
+
+  // validation
+  assert.equal((await api("POST", "/api/purchases", { supplierId: supId, lines: [] })).status, 400, "a delivery needs items");
+  assert.equal((await api("POST", "/api/purchases", { supplierId: 99999, lines: [{ productId: pipe.body.id, qtyMilli: 1000, unitCostCents: 100 }] })).status, 400, "unknown supplier");
+  assert.equal((await api("POST", "/api/purchases", { supplierId: supId, paidCents: 999999, lines: [{ productId: pipe.body.id, qtyMilli: 1000, unitCostCents: 100 }] })).status, 400, "cannot pay more than the delivery");
+
+  // paying: not more than owed; a credit note reduces it too
+  assert.equal((await api("POST", `/api/suppliers/${supId}/payment`, { amountCents: 400000, method: "bank" })).status, 400, "cannot overpay");
+  assert.equal((await api("POST", `/api/suppliers/${supId}/payment`, { amountCents: 120000, method: "bank", reference: "TRX1" })).body.owed_cents, 200000);
+  assert.equal((await api("POST", `/api/suppliers/${supId}/payment`, { amountCents: 50000, method: "credit_note" })).body.owed_cents, 150000, "credit note applied");
+
+  // ageing of what we owe: KES 1,000 delivered 45 days ago and KES 500 delivered 10 days ago, 30 days to pay
+  const old = await api("POST", "/api/suppliers", { name: "Old Debt Co", creditDays: 30 });
+  {
+    const raw = new DatabaseSync(DB);
+    raw.exec("PRAGMA busy_timeout = 5000");
+    const ago = (d: number) => new Date(Date.now() - d * 86400000).toISOString();
+    const ins = raw.prepare("INSERT INTO supplier_ledger (supplier_id,amount_cents,type,created_at) VALUES (?,?,?,?)");
+    ins.run(old.body.id, 100000, "purchase", ago(45));
+    ins.run(old.body.id, 50000, "purchase", ago(10));
+    raw.close();
+  }
+  await api("POST", `/api/suppliers/${old.body.id}/payment`, { amountCents: 30000, method: "cash" });
+  const od = await api("GET", `/api/suppliers/${old.body.id}`);
+  assert.equal(od.body.ageing.buckets.d1_30, 70000, "payment settles the oldest delivery first");
+  assert.equal(od.body.ageing.buckets.current, 50000);
+  assert.equal(od.body.ageing.overdue_cents, 70000);
+  const supList = await api("GET", "/api/suppliers");
+  const oldRow = supList.body.suppliers.find((x: any) => x.id === old.body.id);
+  assert.equal(oldRow.overdue_cents, 70000);
+  assert.equal(oldRow.max_days_overdue, 15);
+  assert.ok(supList.body.totals.owed_cents >= 150000 + 120000, "totals add up across suppliers");
+
+  // reorder list: only items WITH a reorder level, grouped by the last supplier
+  assert.equal((await api("GET", "/api/reorder")).body.some((r: any) => r.id === cement.body.id), false, "no reorder level, not listed");
+  await api("PATCH", `/api/products/${pipe.body.id}`, { reorderLevelMilli: 500000 });
+  const ro = (await api("GET", "/api/reorder")).body.find((r: any) => r.id === pipe.body.id);
+  assert.ok(ro, "pipe is below its reorder level");
+  assert.equal(ro.last_supplier, "AquaBase Ltd", "the last supplier is remembered");
+  assert.equal(ro.suggested_milli, 1000000 - ro.stock_milli, "suggest enough to reach twice the reorder level");
+  await api("PATCH", `/api/products/${pipe.body.id}`, { reorderLevelMilli: 0 });
 
   console.log("\nALL CHECKS PASSED");
 } catch (e) {

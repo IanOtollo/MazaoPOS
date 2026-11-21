@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { fmtKES, toCents } from "../../../shared/money";
 import { fmtTime, get, post, useAuth } from "../lib/api";
 import { Button, ErrorLine, Field, Input, NumInput, PageHead, td, th } from "../lib/ui";
+import { useLive } from "../lib/live";
 
 export default function Shift() {
   const { can } = useAuth();
@@ -14,6 +15,8 @@ export default function Shift() {
   const [history, setHistory] = useState<any[]>([]);
   const load = () => get("/api/shifts/current").then(setS);
   useEffect(() => { load(); if (seeAll) get("/api/shifts").then(setHistory); }, [seeAll, result]);
+
+  useLive(["shifts", "sales"], () => { load(); if (seeAll) get("/api/shifts").then(setHistory); });
 
   const close = async () => {
     if (counted == null) return setErr("Count the drawer and enter the amount");

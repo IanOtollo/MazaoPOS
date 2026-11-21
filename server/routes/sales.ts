@@ -3,13 +3,14 @@ import { z } from "zod";
 import { audit, db, getSetting, setSetting, stockOnHand, tx } from "../db.ts";
 import { HttpError, can, requireLogin, requirePerm, resolveApprover } from "../auth.ts";
 import { eatDayRange, parse, todayEAT } from "../util.ts";
+import { ageingFor } from "../receivables.ts";
 import { lineTotal, vatOfGross, type VatCode } from "../../shared/money.ts";
 
 interface ProductRow {
   id: number; name: string; unit: string; allow_fraction: number; vat_code: VatCode; cost_cents: number;
   price_retail_cents: number; price_contractor_cents: number | null; price_wholesale_cents: number | null; active: number;
 }
-interface CustomerRow { id: number; tier: "retail" | "contractor" | "wholesale"; credit_limit_cents: number; active: number }
+interface CustomerRow { id: number; tier: "retail" | "contractor" | "wholesale"; credit_limit_cents: number; credit_days: number; active: number }
 
 const customerBalance = (id: number) =>
   (db.prepare("SELECT COALESCE(SUM(amount_cents),0) AS b FROM customer_ledger WHERE customer_id=?").get(id) as { b: number }).b;
@@ -170,6 +171,12 @@ export function salesRoutes(app: FastifyInstance) {
         if (!customer) throw new HttpError(400, "Select a customer for credit sales");
         if (customerBalance(customer.id) + creditAmt > customer.credit_limit_cents)
           throw new HttpError(409, "Credit limit exceeded");
+        // optional rule: no more credit for customers who are badly overdue
+        const stopAfter = Number(getSetting("block_credit_overdue_days", "0"));
+        if (stopAfter > 0) {
+          const late = ageingFor(customer.id, customer.credit_days).max_days_overdue;
+          if (late > stopAfter) throw new HttpError(409, `This customer is ${late} days overdue. Take a payment before giving more credit.`);
+        }
       }
 
       const vatTotal = lines.reduce((a, l, i) => a + vatOfGross(l.gross - shares[i], l.p.vat_code), 0);
@@ -340,6 +347,7 @@ export function salesRoutes(app: FastifyInstance) {
     kraPin: z.string().nullish(),
     tier: z.enum(["retail", "contractor", "wholesale"]).default("retail"),
     creditLimitCents: z.number().int().min(0).default(0),
+    creditDays: z.number().int().min(0).max(365).default(30),
   });
 
   app.post("/api/customers", { preHandler: requirePerm("customers.create") }, async (req) => {
@@ -348,8 +356,8 @@ export function salesRoutes(app: FastifyInstance) {
     if ((b.creditLimitCents > 0 || b.tier !== "retail") && !can(req.user!, "customers.manage"))
       throw new HttpError(403, "Your role cannot set a price tier or credit limit");
     const r = db
-      .prepare("INSERT INTO customers (name,phone,kra_pin,tier,credit_limit_cents) VALUES (?,?,?,?,?)")
-      .run(b.name, b.phone ?? null, b.kraPin ?? null, b.tier, b.creditLimitCents);
+      .prepare("INSERT INTO customers (name,phone,kra_pin,tier,credit_limit_cents,credit_days) VALUES (?,?,?,?,?,?)")
+      .run(b.name, b.phone ?? null, b.kraPin ?? null, b.tier, b.creditLimitCents, b.creditDays);
     audit(req.user!.id, "customer_create", { name: b.name });
     return { id: Number(r.lastInsertRowid) };
   });
@@ -359,12 +367,13 @@ export function salesRoutes(app: FastifyInstance) {
     const b = parse(customerSchema.partial().extend({ active: z.boolean().optional() }), req.body);
     const cur = db.prepare("SELECT * FROM customers WHERE id=?").get(id) as Record<string, unknown> | undefined;
     if (!cur) throw new HttpError(404, "Customer not found");
-    db.prepare("UPDATE customers SET name=?,phone=?,kra_pin=?,tier=?,credit_limit_cents=?,active=? WHERE id=?").run(
+    db.prepare("UPDATE customers SET name=?,phone=?,kra_pin=?,tier=?,credit_limit_cents=?,credit_days=?,active=? WHERE id=?").run(
       b.name ?? (cur.name as string),
       (b.phone === undefined ? cur.phone : b.phone) as string | null,
       (b.kraPin === undefined ? cur.kra_pin : b.kraPin) as string | null,
       b.tier ?? (cur.tier as string),
       b.creditLimitCents ?? (cur.credit_limit_cents as number),
+      b.creditDays ?? (cur.credit_days as number),
       b.active === undefined ? (cur.active as number) : b.active ? 1 : 0,
       id,
     );

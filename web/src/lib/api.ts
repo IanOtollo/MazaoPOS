@@ -51,7 +51,7 @@ export interface Product {
 }
 export interface Customer {
   id: number; name: string; phone: string | null; kra_pin: string | null;
-  tier: "retail" | "contractor" | "wholesale"; credit_limit_cents: number; balance_cents: number;
+  tier: "retail" | "contractor" | "wholesale"; credit_limit_cents: number; credit_days?: number; balance_cents: number;
 }
 
 export function priceFor(p: Product, tier: Customer["tier"]): number {

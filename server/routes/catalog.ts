@@ -2,7 +2,7 @@ import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { audit, db, getSetting, hashPin, setSetting, stockOnHand, tx, verifyPin } from "../db.ts";
 import { HttpError, can, createSession, loadUser, requireLogin, requirePerm, type AuthUser } from "../auth.ts";
-import { ALL_PERMISSIONS, OWNER_EXCLUDED, PERMISSIONS, type Permission } from "../../shared/permissions.ts";
+import { ALL_PERMISSIONS, ADMIN_EXCLUDED, PERMISSIONS, type Permission } from "../../shared/permissions.ts";
 import { parse } from "../util.ts";
 
 // naive in-memory brute-force guard for the PIN pad
@@ -50,7 +50,7 @@ export function catalogRoutes(app: FastifyInstance) {
     (db.prepare("SELECT permission FROM role_permissions WHERE role_id=?").all(roleId) as { permission: Permission }[]).map((p) => p.permission);
 
   /** True if `actor` holds every permission that `roleId` grants (so they may hand it out or manage its holders). */
-  const coversRole = (actor: AuthUser, roleId: number) => rolePerms(roleId).every((p) => can(actor, p) || OWNER_EXCLUDED.includes(p));
+  const coversRole = (actor: AuthUser, roleId: number) => rolePerms(roleId).every((p) => can(actor, p) || ADMIN_EXCLUDED.includes(p));
 
   /** Active users who could still manage roles if the given user were removed / changed. */
   const otherRoleManagers = (exceptUserId: number) =>
@@ -90,7 +90,7 @@ export function catalogRoutes(app: FastifyInstance) {
     const target = db.prepare("SELECT id, role_id, active FROM users WHERE id=?").get(id) as { id: number; role_id: number; active: number } | undefined;
     if (!target) throw new HttpError(404, "User not found");
     const actor = req.user!;
-    // you cannot touch an account that has more access than you do (e.g. reset the Owner's PIN)
+    // you cannot touch an account that has more access than you do (e.g. reset the Admin's PIN)
     if (!coversRole(actor, target.role_id)) throw new HttpError(403, "You cannot change an account with more access than your own");
     if (b.roleId !== undefined) {
       if (!db.prepare("SELECT 1 FROM roles WHERE id=?").get(b.roleId)) throw new HttpError(400, "Choose a role");
@@ -100,7 +100,7 @@ export function catalogRoutes(app: FastifyInstance) {
     // never leave the business without anyone who can manage roles
     const newRole = b.roleId ?? target.role_id;
     const keepsRoleMgmt = (b.active ?? !!target.active) && rolePerms(newRole).includes("roles.manage");
-    if (!keepsRoleMgmt && otherRoleManagers(id) === 0) throw new HttpError(400, "This would leave nobody able to manage roles. Assign the Owner role to someone else first.");
+    if (!keepsRoleMgmt && otherRoleManagers(id) === 0) throw new HttpError(400, "This would leave nobody able to manage roles. Assign the Admin role to someone else first.");
 
     if (b.pin) {
       if (pinOwner(b.pin, id)) throw new HttpError(409, PIN_TAKEN);
@@ -138,7 +138,7 @@ export function catalogRoutes(app: FastifyInstance) {
   app.post("/api/roles", { preHandler: requirePerm("roles.manage") }, async (req) => {
     const b = parse(roleBody, req.body);
     const actor = req.user!;
-    const missing = b.permissions.filter((p) => !can(actor, p) && !OWNER_EXCLUDED.includes(p));
+    const missing = b.permissions.filter((p) => !can(actor, p) && !ADMIN_EXCLUDED.includes(p));
     if (missing.length) throw new HttpError(403, "You can only grant permissions that you hold yourself");
     try {
       const id = tx(() => {
@@ -160,10 +160,10 @@ export function catalogRoutes(app: FastifyInstance) {
     const actor = req.user!;
     const role = db.prepare("SELECT id, is_system FROM roles WHERE id=?").get(id) as { id: number; is_system: number } | undefined;
     if (!role) throw new HttpError(404, "Role not found");
-    if (role.is_system) throw new HttpError(400, "The Owner role cannot be edited");
+    if (role.is_system) throw new HttpError(400, "The Admin role cannot be edited");
     const before = new Set(rolePerms(id));
     const added = b.permissions.filter((p) => !before.has(p));
-    if (added.some((p) => !can(actor, p) && !OWNER_EXCLUDED.includes(p))) throw new HttpError(403, "You can only grant permissions that you hold yourself");
+    if (added.some((p) => !can(actor, p) && !ADMIN_EXCLUDED.includes(p))) throw new HttpError(403, "You can only grant permissions that you hold yourself");
     // removing roles.manage from your own role would lock you out of this screen
     if (id === actor.roleId && !b.permissions.includes("roles.manage")) throw new HttpError(400, "You cannot remove role management from your own role");
     try {
@@ -184,7 +184,7 @@ export function catalogRoutes(app: FastifyInstance) {
     const id = Number((req.params as { id: string }).id);
     const role = db.prepare("SELECT id, name, is_system FROM roles WHERE id=?").get(id) as { id: number; name: string; is_system: number } | undefined;
     if (!role) throw new HttpError(404, "Role not found");
-    if (role.is_system) throw new HttpError(400, "The Owner role cannot be removed");
+    if (role.is_system) throw new HttpError(400, "The Admin role cannot be removed");
     const n = (db.prepare("SELECT COUNT(*) AS c FROM users WHERE role_id=?").get(id) as { c: number }).c;
     if (n > 0) throw new HttpError(409, `${n} staff member${n === 1 ? " has" : "s have"} this role. Move them to another role first.`);
     db.prepare("DELETE FROM roles WHERE id=?").run(id);
@@ -200,7 +200,7 @@ export function catalogRoutes(app: FastifyInstance) {
 
   app.put("/api/settings", { preHandler: requirePerm("settings.manage") }, async (req) => {
     const b = parse(z.record(z.string(), z.string()), req.body);
-    const allowed = ["business_name", "kra_pin", "address", "phone", "receipt_footer", "receipt_prefix", "allow_negative_stock"];
+    const allowed = ["business_name", "kra_pin", "address", "phone", "receipt_footer", "receipt_prefix", "allow_negative_stock", "block_credit_overdue_days"];
     for (const [k, v] of Object.entries(b)) if (allowed.includes(k)) setSetting(k, v);
     audit(req.user!.id, "settings_update", Object.keys(b));
     return { ok: true };

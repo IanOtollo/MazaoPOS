@@ -7,6 +7,7 @@ import { Receipt, type SaleDoc } from "../lib/Receipt";
 import { PayModal } from "./PayModal";
 import { OpenShift } from "./OpenShift";
 import { useConfirm, useToast } from "../lib/toast";
+import { useLive } from "../lib/live";
 
 interface Line { product: Product; qty: number }
 type Method = "cash" | "mpesa" | "card" | "bank" | "credit";
@@ -30,6 +31,7 @@ export default function Pos() {
 
   const loadShift = useCallback(() => get("/api/shifts/current").then(setShift), []);
   useEffect(() => { loadShift(); get("/api/settings").then(setBiz); }, [loadShift]);
+  useLive(["shifts"], loadShift);
 
   const [cats, setCats] = useState<{ id: number; name: string }[]>([]);
   const [cat, setCat] = useState<number | null>(null);
@@ -42,6 +44,8 @@ export default function Pos() {
     [],
   );
   useEffect(() => { reloadCatalog(); }, [reloadCatalog]);
+  // another till sold something or a manager changed a price: refresh stock and prices on this screen too
+  useLive(["products", "stock"], reloadCatalog);
 
   // pre-lowercased search text per product, rebuilt only when the catalogue changes
   const indexed = useMemo(

@@ -4,6 +4,7 @@ import { get, patch, post, useAuth, type Product } from "../lib/api";
 import { ArrowLeftRight, ClipboardCheck, Package, PackagePlus, Pencil, Plus, SearchX } from "lucide-react";
 import { Button, EmptyState, ErrorLine, Field, IconButton, Input, Modal, NumInput, PageHead, inputCls, td, th } from "../lib/ui";
 import { useToast } from "../lib/toast";
+import { useLive } from "../lib/live";
 import { ImportProducts } from "./ImportProducts";
 
 interface Cat { id: number; name: string }
@@ -27,15 +28,29 @@ export default function Products() {
     [q, showInactive],
   );
   useEffect(() => { const t = setTimeout(load, 150); return () => clearTimeout(t); }, [load]);
+  useLive(["products", "stock"], load);
 
   return (
     <div className="p-4">
-      <PageHead title="Products">
+      <PageHead title="Inventory">
         <Input placeholder="Search name, code, barcode" value={q} onChange={(e) => setQ(e.target.value)} className="!w-64" />
         {canManage && <label className="text-sm flex items-center gap-1"><input type="checkbox" checked={showInactive} onChange={(e) => setShowInactive(e.target.checked)} /> Show inactive</label>}
         {canManage && <Button onClick={() => setImporting(true)}>Import</Button>}
         {canManage && <Button variant="primary" onClick={() => setEdit("new")}>Add product</Button>}
       </PageHead>
+      {!q && !showInactive && rows.length > 0 && (() => {
+        const low = rows.filter((p) => p.reorder_level_milli > 0 && p.stock_shop + p.stock_store <= p.reorder_level_milli).length;
+        const atCost = rows.reduce((a, p) => a + Math.round((p.cost_cents * Math.max(0, p.stock_shop + p.stock_store)) / 1000), 0);
+        const atPrice = rows.reduce((a, p) => a + Math.round((p.price_retail_cents * Math.max(0, p.stock_shop + p.stock_store)) / 1000), 0);
+        return (
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-4">
+            <Stat label="Items" value={String(rows.length)} />
+            <Stat label="Stock value at selling price" value={`KES ${Math.round(atPrice / 100).toLocaleString("en-KE")}`} />
+            {canCost && <Stat label="Stock value at cost" value={`KES ${Math.round(atCost / 100).toLocaleString("en-KE")}`} />}
+            <Stat label="Low on stock" value={String(low)} warn={low > 0} />
+          </div>
+        );
+      })()}
       <div className="bg-white border border-line rounded-xl shadow-card overflow-auto">
         <table className="w-full">
           <thead>
@@ -48,7 +63,7 @@ export default function Products() {
           </thead>
           <tbody>
             {rows.map((p) => {
-              const low = p.stock_shop + p.stock_store <= p.reorder_level_milli;
+              const low = p.reorder_level_milli > 0 && p.stock_shop + p.stock_store <= p.reorder_level_milli;
               return (
                 <tr key={p.id} className={p.active ? "" : "text-gray-400"}>
                   <td className={td}>{p.name}{p.category && <span className="text-xs text-gray-500"> - {p.category}</span>}</td>
@@ -89,6 +104,15 @@ export default function Products() {
         onSaved={() => { toast({ msg: edit === "new" ? "Product added" : "Product updated" }); setEdit(null); load(); }} />}
       {stock && <StockForm {...stock} onClose={() => setStock(null)}
         onSaved={() => { toast({ msg: { receive: "Stock received", count: "Stock count saved", transfer: "Stock moved" }[stock.mode] }); setStock(null); load(); }} />}
+    </div>
+  );
+}
+
+function Stat({ label, value, warn }: { label: string; value: string; warn?: boolean }) {
+  return (
+    <div className="bg-white border border-line rounded-xl shadow-card p-4">
+      <div className="text-sm text-slate-500">{label}</div>
+      <div className={`text-2xl font-bold tracking-tight mt-1 ${warn ? "text-amber-700" : ""}`}>{value}</div>
     </div>
   );
 }

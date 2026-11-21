@@ -1,38 +1,30 @@
 import { useCallback, useEffect, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { Download, Lock, Plus, Trash2 } from "lucide-react";
-import { OWNER_EXCLUDED, PERMISSIONS, PERMISSION_GROUPS, type Permission } from "../../../shared/permissions";
+import { ADMIN_EXCLUDED, PERMISSIONS, PERMISSION_GROUPS, type Permission } from "../../../shared/permissions";
 import { api, get, getToken, patch, post, put, useAuth } from "../lib/api";
 import { Button, ErrorLine, Field, Input, Modal, PageHead, inputCls, td, th } from "../lib/ui";
 import { useConfirm, useToast } from "../lib/toast";
+import { setBrand } from "../lib/brand";
+import { useLive } from "../lib/live";
 
 type Tab = "business" | "staff" | "roles" | "backup";
 
 export default function Settings() {
   const { can } = useAuth();
-  const tabs = [
-    can("settings.manage") && { id: "business" as Tab, label: "Business" },
-    can("users.manage") && { id: "staff" as Tab, label: "Staff" },
-    can("roles.manage") && { id: "roles" as Tab, label: "Roles & permissions" },
-    can("settings.manage") && { id: "backup" as Tab, label: "Backup" },
-  ].filter(Boolean) as { id: Tab; label: string }[];
-  const [tab, setTab] = useState<Tab>(tabs[0]?.id ?? "business");
+  const [params] = useSearchParams();
+  const allowed: Record<Tab, boolean> = { business: can("settings.manage"), staff: can("users.manage"), roles: can("roles.manage"), backup: can("settings.manage") };
+  const asked = params.get("tab") as Tab | null;
+  const tab: Tab = asked && allowed[asked] ? asked : (["business", "staff", "roles", "backup"] as Tab[]).find((t) => allowed[t]) ?? "business";
+  const TITLE: Record<Tab, string> = { business: "Business", staff: "Staff", roles: "Roles & access", backup: "Backup" };
 
   return (
     <div className="p-4 sm:p-6 max-w-5xl">
-      <PageHead title="Settings" />
-      <div className="flex gap-1 border-b border-slate-200 mb-6 overflow-x-auto" role="tablist">
-        {tabs.map((t) => (
-          <button key={t.id} role="tab" aria-selected={tab === t.id} onClick={() => setTab(t.id)}
-            className={`px-4 py-2.5 font-semibold -mb-px border-b-2 whitespace-nowrap transition-colors ${tab === t.id ? "border-slate-900 text-slate-900" : "border-transparent text-slate-500 hover:text-slate-900"}`}>
-            {t.label}
-          </button>
-        ))}
-      </div>
+      <PageHead title={TITLE[tab]} />
       {tab === "business" && <Business />}
       {tab === "staff" && <Staff />}
       {tab === "roles" && <Roles />}
       {tab === "backup" && <Backups />}
-      <p className="text-sm text-slate-500 mt-10">eTIMS connection: not configured. Sales are recorded with status "pending" until the KRA integration is added.</p>
     </div>
   );
 }
@@ -46,7 +38,7 @@ function Business() {
   const set = (k: string, v: string) => setS((x) => ({ ...x, [k]: v }));
 
   const save = async () => {
-    try { await put("/api/settings", s); toast({ msg: "Settings saved" }); setErr(""); } catch (e) { setErr((e as Error).message); }
+    try { await put("/api/settings", s); setBrand(s.business_name); toast({ msg: "Settings saved" }); setErr(""); } catch (e) { setErr((e as Error).message); }
   };
 
   return (
@@ -83,6 +75,7 @@ function Staff() {
     get<RoleRow[]>("/api/roles").then(setRoles);
   }, []);
   useEffect(load, [load]);
+  useLive(["staff", "roles"], load);
 
   return (
     <div>
@@ -168,6 +161,7 @@ function Roles() {
     setSel((cur) => keep ?? (cur === null || cur === "new" ? r[0]?.id ?? null : cur));
   }), []);
   useEffect(() => { load(); }, [load]);
+  useLive(["roles", "staff"], () => { load(); });
 
   const role = typeof sel === "number" ? roles.find((r) => r.id === sel) : undefined;
   const locked = !!role?.is_system;
@@ -233,14 +227,14 @@ function Roles() {
             <Field label="Description"><Input value={draft.description} onChange={(e) => setDraft({ ...draft, description: e.target.value })} disabled={locked} placeholder="What is this role for?" /></Field>
           </div>
 
-          {locked && <p className="rounded-lg bg-slate-100 text-slate-700 px-3 py-2 mb-4 text-sm flex items-center gap-2"><Lock className="size-4" />The Owner role runs the business but does not use the till, and it cannot be changed.</p>}
+          {locked && <p className="rounded-lg bg-slate-100 text-slate-700 px-3 py-2 mb-4 text-sm flex items-center gap-2"><Lock className="size-4" />The Admin role runs the business but does not use the till, and it cannot be changed.</p>}
 
           {PERMISSION_GROUPS.map((g) => (
             <fieldset key={g} className="mb-5">
               <legend className="text-xs font-semibold uppercase tracking-wider text-slate-500 mb-2">{g}</legend>
               <div className="divide-y divide-slate-100 border border-slate-200 rounded-lg">
                 {PERMISSIONS.filter((p) => p.group === g).map((p) => {
-                  const mine = can(p.key) || OWNER_EXCLUDED.includes(p.key); // the till can always be handed out
+                  const mine = can(p.key) || ADMIN_EXCLUDED.includes(p.key); // the till can always be handed out
                   const off = locked || (!mine && !draft.permissions.has(p.key));
                   return (
                     <label key={p.key} className={`flex items-start gap-3 px-3 py-2.5 ${off ? "opacity-60" : "cursor-pointer hover:bg-slate-50"}`}>
@@ -276,6 +270,7 @@ function Backups() {
   const [busy, setBusy] = useState(false);
   const load = useCallback(() => get<BackupInfo>("/api/backups").then(setInfo), []);
   useEffect(() => { load(); }, [load]);
+  useLive(["backups"], load);
 
   const backUp = async () => {
     setBusy(true);

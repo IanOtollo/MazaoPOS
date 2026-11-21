@@ -8,6 +8,9 @@ import { catalogRoutes } from "./routes/catalog.ts";
 import { salesRoutes } from "./routes/sales.ts";
 import { reportRoutes } from "./routes/reports.ts";
 import { importRoutes } from "./routes/import.ts";
+import { crmRoutes } from "./routes/crm.ts";
+import { supplierRoutes } from "./routes/suppliers.ts";
+import { registerEvents } from "./events.ts";
 import { dashboardRoutes } from "./routes/dashboard.ts";
 import { backupRoutes, startBackupSchedule } from "./routes/backup.ts";
 
@@ -23,11 +26,14 @@ app.setErrorHandler((err: Error & { statusCode?: number }, _req, reply) => {
   return reply.status(500).send({ error: "Something went wrong on the server" });
 });
 
+registerEvents(app);
 app.get("/api/health", async () => ({ ok: true }));
 catalogRoutes(app);
 salesRoutes(app);
 reportRoutes(app);
 importRoutes(app);
+crmRoutes(app);
+supplierRoutes(app);
 dashboardRoutes(app);
 backupRoutes(app);
 startBackupSchedule();

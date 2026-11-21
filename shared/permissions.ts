@@ -11,6 +11,7 @@ export const PERMISSIONS = [
   // Products and stock
   { key: "products.view_cost", group: "Products & stock", label: "See cost prices and profit", hint: "Buying prices and margins are hidden from users without this." },
   { key: "products.manage", group: "Products & stock", label: "Add and edit products and prices", hint: "Create products, change prices, VAT codes and categories." },
+  { key: "suppliers.manage", group: "Products & stock", label: "Manage suppliers and buying", hint: "Suppliers, goods received, what you owe them, and paying them." },
   { key: "stock.manage", group: "Products & stock", label: "Receive, count and move stock", hint: "Record deliveries, stock-takes, damage and transfers between shop and store." },
   // Customers
   { key: "customers.create", group: "Customers", label: "Add customers", hint: "Create customer records with name and phone." },
@@ -31,11 +32,11 @@ export const ALL_PERMISSIONS: Permission[] = PERMISSIONS.map((p) => p.key);
 export const PERMISSION_GROUPS = [...new Set(PERMISSIONS.map((p) => p.group))];
 
 const NOT_FOR_MANAGERS: Permission[] = ["users.manage", "roles.manage", "settings.manage", "audit.view"];
-/** The owner runs the business from the back office. Selling is for cashiers and managers. */
-export const OWNER_EXCLUDED: Permission[] = ["sales.create"];
+/** The admin runs the business from the back office. Selling is for cashiers and managers. */
+export const ADMIN_EXCLUDED: Permission[] = ["sales.create"];
 
 export const DEFAULT_ROLES: { name: string; description: string; isSystem: boolean; permissions: Permission[] }[] = [
-  { name: "Owner", description: "Runs the whole business from the back office: staff, roles, products, reports and settings. Does not use the till. This role cannot be edited or removed.", isSystem: true, permissions: ALL_PERMISSIONS.filter((p) => !OWNER_EXCLUDED.includes(p)) },
+  { name: "Admin", description: "Runs the whole business from the back office: staff, roles, products, reports and settings. Does not use the till. This role cannot be edited or removed.", isSystem: true, permissions: ALL_PERMISSIONS.filter((p) => !ADMIN_EXCLUDED.includes(p)) },
   {
     name: "Manager",
     description: "Runs the shop day to day: products, stock, approvals and reports.",

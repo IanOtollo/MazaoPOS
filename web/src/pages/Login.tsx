@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Delete } from "lucide-react";
 import { get, post, type User } from "../lib/api";
+import { setBrand } from "../lib/brand";
 
 const MAX_PIN = 8;
 
@@ -12,7 +13,7 @@ export default function Login({ onLogin }: { onLogin: (u: User, token: string) =
 
   useEffect(() => {
     get<{ business_name: string }>("/api/auth/info")
-      .then((s) => setName(s.business_name))
+      .then((s) => { setName(s.business_name); setBrand(s.business_name); })
       .catch((e) => setErr(e.message)); // tells the cashier straight away if the server is down
   }, []);
 

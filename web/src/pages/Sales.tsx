@@ -4,6 +4,7 @@ import { fmtTime, get, post, todayEAT } from "../lib/api";
 import { useAuth } from "../lib/api";
 import { Button, ErrorLine, Field, Input, Modal, NumInput, PageHead, inputCls, td, th } from "../lib/ui";
 import { Receipt, type SaleDoc } from "../lib/Receipt";
+import { useLive } from "../lib/live";
 
 interface Row { id: number; receipt_no: string; kind: string; total_cents: number; created_at: string; cashier: string; customer_name: string | null; methods: string | null }
 
@@ -14,6 +15,7 @@ export default function Sales() {
   const [open, setOpen] = useState<number | null>(null);
   const load = useCallback(() => get<Row[]>(`/api/sales?date=${date}&q=${encodeURIComponent(q)}`).then(setRows), [date, q]);
   useEffect(() => { load(); }, [load]);
+  useLive(["sales"], load);
   const sum = rows.reduce((a, r) => a + r.total_cents, 0);
 
   return (
