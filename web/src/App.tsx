@@ -258,12 +258,17 @@ function Shell({ user, onLogout }: { user: User; onLogout: () => void }) {
         </aside>
 
         {/* phone menu drawer */}
-        {drawer && (
-          <div className="md:hidden fixed inset-0 z-50 flex print:hidden" onClick={(e) => { if ((e.target as HTMLElement).closest("a")) setDrawer(false); }}>
-            <div className="w-72 max-w-[85vw] bg-white flex flex-col shadow-pop">{renderSidebar(false, true)}</div>
-            <button className="flex-1 bg-slate-900/50" onClick={() => setDrawer(false)} aria-label="Close menu" />
-          </div>
-        )}
+        <div
+          className={`md:hidden fixed inset-0 z-50 flex print:hidden transition-[visibility] duration-200 ${drawer ? "visible" : "invisible"}`}
+          aria-hidden={!drawer}
+          onClick={(e) => { if ((e.target as HTMLElement).closest("a")) setDrawer(false); }}
+        >
+          <div className={`w-72 max-w-[85vw] bg-white flex flex-col shadow-pop transition-transform duration-200 ease-out ${drawer ? "translate-x-0" : "-translate-x-full"}`}>{renderSidebar(false, true)}</div>
+          <button
+            className={`flex-1 bg-slate-900/50 transition-opacity duration-200 ${drawer ? "opacity-100" : "opacity-0"}`}
+            onClick={() => setDrawer(false)} aria-label="Close menu" tabIndex={drawer ? 0 : -1}
+          />
+        </div>
 
 
         <main className="flex-1 min-h-0 min-w-0 overflow-auto">
