@@ -3,7 +3,7 @@ import { apiUrl } from "./api";
 
 // The shop's display name is set by the admin (Settings > Business). Every screen reads it from here,
 // so a change shows up everywhere at once, including the browser tab title.
-const FALLBACK = "Hardware POS";
+const FALLBACK = "MazaoPOS";
 let name = "";
 let logoVersion = "";
 const subs = new Set<() => void>();

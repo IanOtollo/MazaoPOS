@@ -18,7 +18,7 @@ const PIN_TAKEN = "That PIN is already used by another staff member. Choose a di
 export function catalogRoutes(app: FastifyInstance) {
   // ---------------- auth ----------------
   // public: only the shop's display name, so the sign-in screen can show it
-  app.get("/api/auth/info", async () => ({ business_name: getSetting("business_name", "Hardware POS"), logo_version: getSetting("logo_version", "") }));
+  app.get("/api/auth/info", async () => ({ business_name: getSetting("business_name", "MazaoPOS"), logo_version: getSetting("logo_version", "") }));
 
     app.post("/api/auth/login", async (req) => {
     const { pin } = parse(z.object({ pin: z.string().regex(/^\d{4,8}$/, "Enter your 4 to 8 digit PIN") }), req.body);

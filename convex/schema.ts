@@ -2,7 +2,7 @@ import { defineSchema, defineTable } from "convex/server";
 import { v } from "convex/values";
 
 /*
- * Mazao POS data model.
+ * MazaoPOS data model.
  *
  * Every business record keeps a small whole-number `id` (from the `counters` table) next to Convex's own
  * `_id`. The screens already use numeric ids everywhere (product 12, location 1, receipt lines...), so keeping

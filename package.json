@@ -1,5 +1,5 @@
 {
-  "name": "mazao-pos",
+  "name": "mazaopos",
   "version": "1.0.0",
   "description": "Point of sale for a hardware shop: fast till, stock, suppliers, customers on credit, reports. Runs on the shop computer and keeps selling without internet.",
   "scripts": {

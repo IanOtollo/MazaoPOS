@@ -1,4 +1,4 @@
-# Mazao POS
+# MazaoPOS
 
 A point of sale for a hardware shop. It runs on the shop computer, keeps selling when the internet is down, and covers the till, stock, suppliers, customers who buy on credit, staff roles, reports and backups.
 
