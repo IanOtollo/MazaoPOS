@@ -130,11 +130,11 @@ function ReorderList({ rows }: { rows: Reorder[] }) {
 // ---------------------------------------------------------------- add / edit
 function SupplierForm({ s, onClose, onSaved }: { s: Sup | null; onClose: () => void; onSaved: () => void }) {
   const toast = useToast();
-  const [f, setF] = useState({ name: s?.name ?? "", phone: s?.phone ?? "", email: s?.email ?? "", kra: s?.kra_pin ?? "", days: s?.credit_days ?? 30 });
+  const [f, setF] = useState({ name: s?.name ?? "", phone: s?.phone ?? "", email: s?.email ?? "", days: s?.credit_days ?? 30 });
   const [err, setErr] = useState("");
   const save = async () => {
     if (!f.name.trim()) return setErr("Give the supplier a name");
-    const body = { name: f.name.trim(), phone: f.phone || null, email: f.email || null, kraPin: f.kra || null, creditDays: f.days };
+    const body = { name: f.name.trim(), phone: f.phone || null, email: f.email || null, creditDays: f.days };
     try { if (s) await patch(`/api/suppliers/${s.id}`, body); else await post("/api/suppliers", body); toast({ msg: s ? "Supplier updated" : "Supplier added" }); onSaved(); }
     catch (e) { setErr((e as Error).message); }
   };
@@ -147,7 +147,6 @@ function SupplierForm({ s, onClose, onSaved }: { s: Sup | null; onClose: () => v
           <Field label="Days to pay" hint="How long they give you"><NumInput value={f.days} onChange={(n) => setF({ ...f, days: Math.min(365, Math.round(n ?? 0)) })} /></Field>
         </div>
         <Field label="Email"><Input value={f.email} onChange={(e) => setF({ ...f, email: e.target.value })} /></Field>
-        <Field label="KRA PIN"><Input value={f.kra} onChange={(e) => setF({ ...f, kra: e.target.value.toUpperCase() })} /></Field>
         <ErrorLine msg={err} />
         <div className="flex justify-end gap-2"><Button onClick={onClose}>Cancel</Button><Button variant="primary" onClick={save}>Save</Button></div>
       </div>

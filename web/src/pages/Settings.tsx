@@ -5,7 +5,7 @@ import { ADMIN_EXCLUDED, PERMISSIONS, PERMISSION_GROUPS, type Permission } from 
 import { api, get, getToken, patch, post, put, useAuth } from "../lib/api";
 import { Button, ErrorLine, Field, Input, Modal, PageHead, inputCls, td, th, Select } from "../lib/ui";
 import { useConfirm, useToast } from "../lib/toast";
-import { setBrand } from "../lib/brand";
+import { setBrand, setLogo, useLogoUrl } from "../lib/brand";
 import { useLive } from "../lib/live";
 
 type Tab = "business" | "staff" | "roles" | "backup";
@@ -43,9 +43,9 @@ function Business() {
 
   return (
     <div className="max-w-2xl">
+      <LogoUpload />
       <div className="grid sm:grid-cols-2 gap-4 mb-4">
         <Field label="Business name"><Input value={s.business_name ?? ""} onChange={(e) => set("business_name", e.target.value)} /></Field>
-        <Field label="KRA PIN"><Input value={s.kra_pin ?? ""} onChange={(e) => set("kra_pin", e.target.value.toUpperCase())} /></Field>
         <Field label="Address"><Input value={s.address ?? ""} onChange={(e) => set("address", e.target.value)} /></Field>
         <Field label="Phone"><Input value={s.phone ?? ""} onChange={(e) => set("phone", e.target.value)} /></Field>
         <div className="sm:col-span-2"><Field label="Receipt footer"><Input value={s.receipt_footer ?? ""} onChange={(e) => set("receipt_footer", e.target.value)} /></Field></div>
@@ -56,6 +56,66 @@ function Business() {
       </div>
       <ErrorLine msg={err} />
       <Button variant="primary" onClick={save} className="mt-2">Save settings</Button>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------- Logo
+/** Shrink the picture in the browser first, so even a phone photo of a signboard becomes a small, crisp logo. */
+function shrink(file: File, max = 320): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const url = URL.createObjectURL(file);
+    const img = new Image();
+    img.onload = () => {
+      const scale = Math.min(1, max / Math.max(img.width, img.height));
+      const c = document.createElement("canvas");
+      c.width = Math.max(1, Math.round(img.width * scale));
+      c.height = Math.max(1, Math.round(img.height * scale));
+      c.getContext("2d")!.drawImage(img, 0, 0, c.width, c.height);
+      URL.revokeObjectURL(url);
+      resolve(c.toDataURL("image/png"));
+    };
+    img.onerror = () => { URL.revokeObjectURL(url); reject(new Error("That file could not be read as an image")); };
+    img.src = url;
+  });
+}
+
+function LogoUpload() {
+  const toast = useToast();
+  const confirm = useConfirm();
+  const logo = useLogoUrl();
+  const [busy, setBusy] = useState(false);
+  const pick = async (f: File | undefined) => {
+    if (!f) return;
+    if (!/^image\/(png|jpeg|webp)$/.test(f.type)) return toast({ msg: "Choose a PNG, JPG or WebP image", kind: "err" });
+    setBusy(true);
+    try {
+      const r = await put<{ version: string }>("/api/logo", { dataUrl: await shrink(f) });
+      setLogo(r.version);
+      toast({ msg: "Logo saved" });
+    } catch (e) { toast({ msg: (e as Error).message, kind: "err" }); }
+    setBusy(false);
+  };
+  const remove = async () => {
+    if (!(await confirm({ title: "Remove the logo?", body: "The menu and receipts go back to showing just the business name.", confirmLabel: "Remove", danger: true }))) return;
+    try { await api("DELETE", "/api/logo"); setLogo(""); toast({ msg: "Logo removed" }); } catch (e) { toast({ msg: (e as Error).message, kind: "err" }); }
+  };
+  return (
+    <div className="flex items-center gap-4 mb-6 pb-6 border-b border-slate-200">
+      <div className="size-24 shrink-0 rounded-xl border border-dashed border-slate-300 bg-white flex items-center justify-center overflow-hidden">
+        {logo ? <img src={logo} alt="Your logo" className="max-h-full max-w-full object-contain" /> : <span className="text-xs text-slate-400 text-center px-2">No logo yet</span>}
+      </div>
+      <div>
+        <div className="font-semibold">Business logo</div>
+        <p className="text-sm text-slate-500 mb-2">Shown on the sign-in screen, the menu, receipts and customer statements. A square or wide PNG or JPG works best.</p>
+        <div className="flex gap-2">
+          <label className={`border px-4 py-2 rounded-lg font-semibold bg-white border-slate-300 hover:bg-slate-50 shadow-card cursor-pointer ${busy ? "opacity-50 pointer-events-none" : ""}`}>
+            {logo ? "Replace logo" : "Upload logo"}
+            <input type="file" accept="image/png,image/jpeg,image/webp" className="hidden" onChange={(e) => { pick(e.target.files?.[0]); e.target.value = ""; }} />
+          </label>
+          {logo && <Button variant="danger" onClick={remove}>Remove</Button>}
+        </div>
+      </div>
     </div>
   );
 }

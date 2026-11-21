@@ -20,6 +20,7 @@ const TOPICS: [RegExp, string[]][] = [
   [/^\/api\/users/, ["staff", "roles"]],
   [/^\/api\/roles/, ["roles", "staff"]],
   [/^\/api\/backups/, ["backups"]],
+  [/^\/api\/logo/, ["settings"]],
   [/^\/api\/(suppliers|purchases)/, ["suppliers", "stock", "products", "dashboard"]],
 ];
 

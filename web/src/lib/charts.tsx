@@ -19,12 +19,12 @@ export function Card({ title, sub, badge, action, children }: { title: string; s
   );
 }
 
-export function Kpi({ label, value, unit, now, before, vs, note, invert, tone }: { label: string; value: string; unit?: string; now?: number; before?: number; vs?: string; note?: string; invert?: boolean; tone?: "warn" }) {
+export function Kpi({ label, value, unit, now, before, vs, note, invert, tone, spark }: { label: string; value: string; unit?: string; now?: number; before?: number; vs?: string; note?: string; invert?: boolean; tone?: "warn"; spark?: number[] | null }) {
   const pct = now !== undefined && before !== undefined && before > 0 ? ((now - before) / before) * 100 : null;
   const up = pct !== null && pct >= 0;
   const good = pct === null ? null : invert ? !up : up;
   return (
-    <div className="bg-white border border-line rounded-xl shadow-card p-4">
+    <div className="relative bg-white border border-line rounded-xl shadow-card p-4">
       <div className="text-sm text-slate-500">{label}</div>
       <div className="mt-1 flex items-baseline gap-1.5">
         {unit && <span className="text-sm font-semibold text-slate-500">{unit}</span>}
@@ -36,7 +36,25 @@ export function Kpi({ label, value, unit, now, before, vs, note, invert, tone }:
           : <span className="text-slate-500">{note ?? (pct === null && before === 0 && now ? `nothing in ${vs}` : "")}</span>}
         {pct !== null && Math.abs(pct) >= 0.1 && note && <span className="text-slate-500"> · {note}</span>}
       </div>
+      {spark && spark.length > 1 && <div className="absolute top-3 right-3 w-20 h-8 hidden sm:block" aria-hidden><Sparkline values={spark} /></div>}
     </div>
+  );
+}
+
+/** A tiny trend line with a soft fill, for the inside of a card. */
+export function Sparkline({ values }: { values: number[] }) {
+  const W = 120, H = 36, P = 2;
+  const max = Math.max(...values), min = Math.min(...values, 0);
+  const span = max - min || 1;
+  const x = (i: number) => P + (i * (W - 2 * P)) / (values.length - 1);
+  const y = (v: number) => H - P - ((v - min) / span) * (H - 2 * P);
+  const pts = values.map((v, i) => `${x(i)},${y(v)}`).join(" ");
+  const flat = max === min;
+  return (
+    <svg viewBox={`0 0 ${W} ${H}`} className="w-full h-full" preserveAspectRatio="none" aria-hidden>
+      {!flat && <polygon points={`${x(0)},${H - P} ${pts} ${x(values.length - 1)},${H - P}`} fill="#e2e8f0" />}
+      <polyline points={pts} fill="none" stroke={flat ? "#cbd5e1" : "#334155"} strokeWidth="1.75" strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
+    </svg>
   );
 }
 

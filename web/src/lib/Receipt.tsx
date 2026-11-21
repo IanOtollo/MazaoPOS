@@ -15,10 +15,10 @@ export function Receipt({ sale, biz }: { sale: SaleDoc; biz: Record<string, stri
   return (
     <div className="receipt">
       <div style={{ textAlign: "center" }}>
+        {biz.logo_version && <img src={`/api/logo?v=${biz.logo_version}`} alt="" style={{ display: "block", margin: "0 auto 4px", maxHeight: 48, maxWidth: "60%" }} />}
         <strong style={{ fontSize: 14 }}>{biz.business_name}</strong>
         {biz.address && <div>{biz.address}</div>}
         {biz.phone && <div>Tel {biz.phone}</div>}
-        {biz.kra_pin && <div>PIN {biz.kra_pin}</div>}
       </div>
       <hr />
       <div style={{ textAlign: "center" }}><strong>{refund ? "REFUND / CREDIT NOTE" : "SALES RECEIPT"}</strong></div>
@@ -26,7 +26,6 @@ export function Receipt({ sale, biz }: { sale: SaleDoc; biz: Record<string, stri
       <div className="row"><span>Date</span><span>{fmtTime(sale.created_at)}</span></div>
       <div className="row"><span>Served by</span><span>{sale.cashier}</span></div>
       {sale.customer_name && <div className="row"><span>Customer</span><span>{sale.customer_name}</span></div>}
-      {sale.customer_pin && <div className="row"><span>Cust. PIN</span><span>{sale.customer_pin}</span></div>}
       <hr />
       {sale.items.map((i) => (
         <div key={i.id} style={{ marginBottom: 3 }}>

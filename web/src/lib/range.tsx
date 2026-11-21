@@ -5,8 +5,8 @@ import { useLive } from "./live";
 export interface Totals { sales: number; sales_cents: number; net_cents: number; vat_cents: number; discount_cents: number; refund_cents: number; cogs_cents: number | null; profit_cents: number | null }
 export interface DashData {
   days: number; from: string; to: string; current: Totals; previous: Totals;
-  series: { date: string; net_cents: number; sales: number }[];
-  hours: { hour: number; sales: number }[];
+  series: { date: string; net_cents: number; vat_cents: number; profit_cents: number | null; sales: number }[];
+  hours: { hour: number; sales: number; net_cents: number }[];
   methods: { method: string; amount_cents: number }[];
   byVat: { vat_code: "A" | "B" | "E"; gross_cents: number; vat_cents: number }[];
   topItems: { name: string; unit: string; qty_milli: number; gross_cents: number }[];
@@ -46,6 +46,21 @@ export function useRange() {
     data, err, days, custom,
     vs: span === 1 ? "the day before" : `the previous ${span} days`,
     picker: <RangePicker days={days} custom={custom} setDays={setDays} setCustom={setCustom} />,
+  };
+}
+
+/** The little trend lines inside the cards: per hour for a single day, per day for longer periods. */
+export function kpiSeries(d: DashData) {
+  if (d.days === 1) {
+    const h = d.hours.filter((x) => x.hour >= 6 && x.hour <= 21);
+    return { net: h.map((x) => x.net_cents), sales: h.map((x) => x.sales), avg: h.map((x) => (x.sales ? x.net_cents / x.sales : 0)), profit: null as number[] | null, vat: null as number[] | null };
+  }
+  return {
+    net: d.series.map((x) => x.net_cents),
+    sales: d.series.map((x) => x.sales),
+    avg: d.series.map((x) => (x.sales ? x.net_cents / x.sales : 0)),
+    profit: d.series[0]?.profit_cents == null ? null : d.series.map((x) => x.profit_cents ?? 0),
+    vat: d.series.map((x) => x.vat_cents),
   };
 }
 

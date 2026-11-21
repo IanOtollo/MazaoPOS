@@ -268,6 +268,12 @@ try {
   assert.equal(blind.body.stockValue, null, "stock cost hidden without products.view_cost");
   assert.ok(blind.body.current.net_cents > 0, "but sales figures are visible");
 
+  // every figure on the cards has a series behind its sparkline
+  assert.equal(dash.body.series[6].profit_cents, repToday.margin_cents, "the day's profit matches the report");
+  assert.equal(dash.body.series[6].vat_cents, repToday.vat_cents, "the day's VAT matches the report");
+  assert.ok(dash.body.hours.every((h: any) => typeof h.net_cents === "number"), "hourly takings are present for the Today view");
+  assert.ok(blind.body.series.every((x: any) => x.profit_cents === null), "no profit series without products.view_cost");
+
   // custom date range
   const todayStr = dash.body.to as string;
   const one = await api("GET", `/api/dashboard?from=${todayStr}&to=${todayStr}`);
@@ -618,6 +624,33 @@ try {
   assert.equal((await api("POST", "/api/sales", { items: anon.items, customerId: lpId, payments: [{ method: "cash", amountCents: 15000 }] }, cashierTok)).status, 200, "a cash sale to the same person is fine");
   assert.equal((await api("PATCH", `/api/customers/${lpId}`, { creditStopped: false })).status, 200);
   assert.equal((await api("POST", "/api/sales", { ...anon, customerId: lpId, approvalPin: "1234" }, cashierTok)).status, 200, "credit is back once lifted");
+
+  // =================== logo ===================
+  assert.equal((await fetch(base + "/api/logo")).status, 404, "no logo yet");
+  assert.equal((await (await fetch(base + "/api/auth/info")).json() as any).logo_version, "", "the sign-in screen knows there is no logo");
+  const PNG = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
+  const asData = (mime: string, b64: string) => ({ dataUrl: `data:${mime};base64,${b64}` });
+  assert.equal((await api("PUT", "/api/logo", asData("image/png", PNG), cashierTok)).status, 403, "cashier cannot change the logo");
+  assert.equal((await api("PUT", "/api/logo", { dataUrl: "hello" })).status, 400, "not a data URL");
+  assert.equal((await api("PUT", "/api/logo", asData("image/svg+xml", PNG))).status, 400, "SVG is refused (it can carry scripts)");
+  assert.equal((await api("PUT", "/api/logo", asData("image/png", Buffer.from("<script>alert(1)</script>").toString("base64")))).status, 400, "text labelled as an image is refused");
+  assert.equal((await api("PUT", "/api/logo", asData("image/png", Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), Buffer.alloc(450 * 1024)]).toString("base64")))).status, 400, "too large is refused");
+  const up = await api("PUT", "/api/logo", asData("image/png", PNG));
+  assert.equal(up.status, 200, JSON.stringify(up.body));
+  const got = await fetch(base + "/api/logo");
+  assert.equal(got.status, 200, "the logo is public so the sign-in screen can show it");
+  assert.equal(got.headers.get("content-type"), "image/png");
+  assert.equal(got.headers.get("x-content-type-options"), "nosniff");
+  assert.deepEqual(Buffer.from(await got.arrayBuffer()), Buffer.from(PNG, "base64"), "the same bytes come back");
+  assert.equal((await fetch(base + "/api/logo", { headers: { "if-none-match": got.headers.get("etag")! } })).status, 304, "unchanged logos are not re-sent");
+  assert.equal(((await (await fetch(base + "/api/auth/info")).json()) as any).logo_version, up.body.version, "sign-in screen sees the new version");
+  assert.equal((await api("GET", "/api/settings")).body.logo_version, up.body.version);
+  assert.equal((await api("PUT", "/api/settings", { logo_version: "hacked" })).status, 200);
+  assert.equal((await api("GET", "/api/settings")).body.logo_version, up.body.version, "the version cannot be set through the settings form");
+  assert.equal((await api("DELETE", "/api/logo", undefined, cashierTok)).status, 403);
+  assert.equal((await api("DELETE", "/api/logo")).status, 200);
+  assert.equal((await fetch(base + "/api/logo")).status, 404, "gone after removal");
+  assert.equal((await api("GET", "/api/settings")).body.logo_version, "");
 
   console.log("\nALL CHECKS PASSED");
 } catch (e) {

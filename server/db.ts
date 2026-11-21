@@ -182,6 +182,14 @@ CREATE TABLE IF NOT EXISTS product_units (
 );
 CREATE INDEX IF NOT EXISTS idx_pu_product ON product_units(product_id);
 
+-- small files kept with the shop's data (the logo)
+CREATE TABLE IF NOT EXISTS files (
+  name TEXT PRIMARY KEY,
+  mime TEXT NOT NULL,
+  data BLOB NOT NULL,
+  updated_at TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS shifts (
   id INTEGER PRIMARY KEY,
   user_id INTEGER NOT NULL REFERENCES users(id),

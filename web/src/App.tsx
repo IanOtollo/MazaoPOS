@@ -4,7 +4,7 @@ import { BarChart3, ChevronDown, Database, HardDriveDownload, LayoutDashboard, B
 import { AuthCtx, fmtTime, get, getToken, post, setToken, userCan, type User } from "./lib/api";
 import type { Permission } from "../../shared/permissions";
 import { useConfirm } from "./lib/toast";
-import { brandOr, setBrand, useBrand } from "./lib/brand";
+import { brandOr, setBrand, setLogo, useBrand, useLogoUrl } from "./lib/brand";
 import { startLive, stopLive, useLive, useLiveConnected } from "./lib/live";
 import Login from "./pages/Login";
 import Pos from "./pages/Pos";
@@ -67,6 +67,7 @@ function Shell({ user, onLogout }: { user: User; onLogout: () => void }) {
   const [drawer, setDrawer] = useState(false);
   const [closed, setClosed] = useState<Record<string, boolean>>(readClosed);
   const biz = useBrand();
+  const logo = useLogoUrl();
   const [status, setStatus] = useState<Status>({ shiftOpenedAt: null, lowStock: 0, owing: 0 });
   const showShift = canSell || !!status.shiftOpenedAt;
 
@@ -75,8 +76,8 @@ function Shell({ user, onLogout }: { user: User; onLogout: () => void }) {
     return !c;
   });
 
-  useEffect(() => { get<Record<string, string>>("/api/settings").then((s) => setBrand(s.business_name)).catch(() => {}); }, []);
-  useLive(["settings"], () => { get<Record<string, string>>("/api/settings").then((s) => setBrand(s.business_name)).catch(() => {}); });
+  useEffect(() => { get<Record<string, string>>("/api/settings").then((s) => { setBrand(s.business_name); setLogo(s.logo_version); }).catch(() => {}); }, []);
+  useLive(["settings"], () => { get<Record<string, string>>("/api/settings").then((s) => { setBrand(s.business_name); setLogo(s.logo_version); }).catch(() => {}); });
 
   // refresh the live badges whenever the user moves between screens
   const refresh = useCallback(async () => {
@@ -173,7 +174,7 @@ function Shell({ user, onLogout }: { user: User; onLogout: () => void }) {
       <>
           {/* brand */}
           <div className={`flex items-center gap-3 px-4 h-16 border-b border-slate-200 ${collapsed ? "justify-center px-0" : ""}`}>
-            <span className="size-9 shrink-0 rounded-lg bg-slate-900 text-white flex items-center justify-center"><Hammer className="size-5" /></span>
+            {logo ? <img src={logo} alt="" className="size-9 shrink-0 rounded-lg object-contain" /> : collapsed ? <span className="size-9 shrink-0 rounded-lg bg-slate-900 text-white font-bold flex items-center justify-center">{brandOr(biz)[0]?.toUpperCase()}</span> : null}
             {!collapsed && <span className="font-bold text-slate-900 tracking-tight leading-tight truncate">{brandOr(biz)}</span>}
           </div>
 

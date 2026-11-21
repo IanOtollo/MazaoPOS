@@ -252,8 +252,8 @@ function AccountView({ id, onClose, onChanged, onEdit }: { id: number; onClose: 
 
       {/* printed version, shown only when printing */}
       <div className="print-area hidden print:block text-[12px] text-black">
+        {biz.logo_version && <img src={`/api/logo?v=${biz.logo_version}`} alt="" style={{ maxHeight: 56, marginBottom: 6 }} />}
         <h1 style={{ fontSize: 20, fontWeight: 700 }}>{biz.business_name}</h1>
-        {biz.kra_pin && <div>PIN {biz.kra_pin}</div>}
         <h2 style={{ fontSize: 16, fontWeight: 700, marginTop: 14 }}>Statement of account</h2>
         <div>{c.name}{c.phone ? `  ·  ${c.phone}` : ""}</div>
         <div>Printed {fmtDay(new Date(Date.now() + 3 * 3600000).toISOString().slice(0, 10))}</div>

@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Delete } from "lucide-react";
 import { get, post, type User } from "../lib/api";
-import { setBrand } from "../lib/brand";
+import { setBrand, setLogo, useLogoUrl } from "../lib/brand";
 
 const MAX_PIN = 8;
 
@@ -10,10 +10,11 @@ export default function Login({ onLogin }: { onLogin: (u: User, token: string) =
   const [err, setErr] = useState("");
   const [busy, setBusy] = useState(false);
   const [name, setName] = useState("");
+  const logo = useLogoUrl();
 
   useEffect(() => {
-    get<{ business_name: string }>("/api/auth/info")
-      .then((s) => { setName(s.business_name); setBrand(s.business_name); })
+    get<{ business_name: string; logo_version: string }>("/api/auth/info")
+      .then((s) => { setName(s.business_name); setBrand(s.business_name); setLogo(s.logo_version); })
       .catch((e) => setErr(e.message)); // tells the cashier straight away if the server is down
   }, []);
 
@@ -47,6 +48,7 @@ export default function Login({ onLogin }: { onLogin: (u: User, token: string) =
   return (
     <div className="h-full flex items-center justify-center bg-slate-100 p-4">
       <div className="w-full max-w-[20rem]">
+        {logo && <img src={logo} alt="" className="mx-auto mb-3 h-20 max-w-[12rem] object-contain" />}
         <h1 className="text-center text-2xl font-bold tracking-tight mb-1">{name || "Sign in"}</h1>
         <p className="text-center text-slate-500 mb-6">Enter your PIN</p>
 

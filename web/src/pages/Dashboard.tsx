@@ -3,12 +3,13 @@ import { ChevronRight } from "lucide-react";
 import { fmtKES } from "../../../shared/money";
 import { fmtTime } from "../lib/api";
 import { BarChart, Card, Kpi, List, PaymentMix, kes0 } from "../lib/charts";
-import { fmtDay, useRange } from "../lib/range";
+import { fmtDay, kpiSeries, useRange } from "../lib/range";
 import { PageHead } from "../lib/ui";
 
 /** The at-a-glance screen: a few numbers, one trend, and anything that needs attention. Detail lives in Reports. */
 export default function Dashboard() {
   const { data: d, err, vs, picker } = useRange();
+  const sp = d ? kpiSeries(d) : null;
 
   return (
     <div className="p-4 sm:p-6 max-w-6xl">
@@ -20,11 +21,11 @@ export default function Dashboard() {
       {d && (
         <div className="space-y-6">
           <div className="grid grid-cols-2 xl:grid-cols-4 gap-3">
-            <Kpi label="Net sales" value={kes0(d.current.net_cents)} unit="KES" now={d.current.net_cents} before={d.previous.net_cents} vs={vs} />
-            <Kpi label="Sales made" value={String(d.current.sales)} now={d.current.sales} before={d.previous.sales} vs={vs} />
+            <Kpi label="Net sales" value={kes0(d.current.net_cents)} unit="KES" now={d.current.net_cents} before={d.previous.net_cents} vs={vs} spark={sp?.net} />
+            <Kpi label="Sales made" value={String(d.current.sales)} now={d.current.sales} before={d.previous.sales} vs={vs} spark={sp?.sales} />
             {d.current.profit_cents !== null
-              ? <Kpi label="Gross profit" value={kes0(d.current.profit_cents)} unit="KES" now={d.current.profit_cents} before={d.previous.profit_cents ?? 0} vs={vs} />
-              : <Kpi label="VAT collected" value={kes0(d.current.vat_cents)} unit="KES" now={d.current.vat_cents} before={d.previous.vat_cents} vs={vs} />}
+              ? <Kpi label="Gross profit" value={kes0(d.current.profit_cents)} unit="KES" now={d.current.profit_cents} before={d.previous.profit_cents ?? 0} vs={vs} spark={sp?.profit} />
+              : <Kpi label="VAT collected" value={kes0(d.current.vat_cents)} unit="KES" now={d.current.vat_cents} before={d.previous.vat_cents} vs={vs} spark={sp?.vat} />}
             <Kpi label="Owed by customers" value={kes0(d.owing.total_cents)} unit="KES" note={`${d.owing.count} ${d.owing.count === 1 ? "customer" : "customers"}`} tone={d.owing.total_cents > 0 ? "warn" : undefined} />
           </div>
 

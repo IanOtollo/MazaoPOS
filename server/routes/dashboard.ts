@@ -62,23 +62,37 @@ export function dashboardRoutes(app: FastifyInstance) {
     // one point per day, including days with no sales
     const rows = db
       .prepare(
-        `SELECT date(${EAT}) AS d, COALESCE(SUM(total_cents),0) AS net_cents, COUNT(CASE WHEN kind='sale' THEN 1 END) AS sales
+        `SELECT date(${EAT}) AS d, COALESCE(SUM(total_cents),0) AS net_cents, COALESCE(SUM(vat_cents),0) AS vat_cents,
+                COUNT(CASE WHEN kind='sale' THEN 1 END) AS sales
          FROM sales WHERE created_at >= ? AND created_at < ? GROUP BY d`,
       )
-      .all(from, to) as { d: string; net_cents: number; sales: number }[];
+      .all(from, to) as { d: string; net_cents: number; vat_cents: number; sales: number }[];
+    const costByDay = new Map(
+      (
+        db
+          .prepare(
+            `SELECT date(datetime(s.created_at,'+3 hours')) AS d, COALESCE(SUM(CAST(si.cost_cents * si.qty_milli / 1000.0 AS INTEGER)),0) AS c
+             FROM sale_items si JOIN sales s ON s.id=si.sale_id WHERE s.created_at >= ? AND s.created_at < ? GROUP BY d`,
+          )
+          .all(from, to) as { d: string; c: number }[]
+      ).map((r) => [r.d, r.c]),
+    );
     const byDay = new Map(rows.map((r) => [r.d, r]));
     const series = Array.from({ length: days }, (_, i) => {
       const d = addDays(firstDay, i);
-      return { date: d, net_cents: byDay.get(d)?.net_cents ?? 0, sales: byDay.get(d)?.sales ?? 0 };
+      const r = byDay.get(d);
+      const net = r?.net_cents ?? 0;
+      const vat = r?.vat_cents ?? 0;
+      return { date: d, net_cents: net, vat_cents: vat, sales: r?.sales ?? 0, profit_cents: seeCost ? net - vat - (costByDay.get(d) ?? 0) : null };
     });
 
     const hourly = db
       .prepare(
-        `SELECT CAST(strftime('%H', ${EAT}) AS INTEGER) AS h, COUNT(*) AS sales
+        `SELECT CAST(strftime('%H', ${EAT}) AS INTEGER) AS h, COUNT(*) AS sales, COALESCE(SUM(total_cents),0) AS net_cents
          FROM sales WHERE kind='sale' AND created_at >= ? AND created_at < ? GROUP BY h`,
       )
-      .all(from, to) as { h: number; sales: number }[];
-    const hours = Array.from({ length: 24 }, (_, h) => ({ hour: h, sales: hourly.find((x) => x.h === h)?.sales ?? 0 }));
+      .all(from, to) as { h: number; sales: number; net_cents: number }[];
+    const hours = Array.from({ length: 24 }, (_, h) => ({ hour: h, sales: hourly.find((x) => x.h === h)?.sales ?? 0, net_cents: hourly.find((x) => x.h === h)?.net_cents ?? 0 }));
 
     const methods = db
       .prepare(
