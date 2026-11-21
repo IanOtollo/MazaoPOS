@@ -1,4 +1,5 @@
 import { useSyncExternalStore } from "react";
+import { apiUrl } from "./api";
 
 // The shop's display name is set by the admin (Settings > Business). Every screen reads it from here,
 // so a change shows up everywhere at once, including the browser tab title.
@@ -31,7 +32,7 @@ export function useLogoUrl(): string | null {
     (f) => { subs.add(f); return () => { subs.delete(f); }; },
     () => logoVersion,
   );
-  return v ? `/api/logo?v=${v}` : null;
+  return v ? apiUrl(`/api/logo?v=${v}`) : null;
 }
 
 export const brandOr = (n: string) => n || FALLBACK;

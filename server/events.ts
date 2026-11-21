@@ -28,7 +28,12 @@ export function registerEvents(app: FastifyInstance) {
   app.get("/api/events", { preHandler: requireLogin() }, async (req, reply) => {
     reply.hijack();
     const res = reply.raw;
+    // a hijacked reply skips the CORS plugin, so screens hosted on another address need the header added here
+    const allowed = process.env.CORS_ORIGIN?.split(",").map((s) => s.trim()).filter(Boolean);
+    const origin = req.headers.origin;
+    const cors: Record<string, string> = origin && (!allowed?.length || allowed.includes(origin)) ? { "access-control-allow-origin": origin, vary: "Origin" } : {};
     res.writeHead(200, {
+      ...cors,
       "content-type": "text/event-stream",
       "cache-control": "no-cache, no-transform",
       connection: "keep-alive",

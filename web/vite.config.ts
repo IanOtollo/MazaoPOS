@@ -4,6 +4,7 @@ import tailwindcss from "@tailwindcss/vite";
 
 export default defineConfig({
   root: "web",
+  envDir: "..", // read .env from the project folder, not from web/
   plugins: [react(), tailwindcss()],
   server: { host: true, port: 5173, proxy: { "/api": "http://localhost:4000" } },
   build: { outDir: "dist", emptyOutDir: true },

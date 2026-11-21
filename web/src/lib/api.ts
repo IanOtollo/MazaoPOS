@@ -1,6 +1,11 @@
 import { createContext, useContext } from "react";
 import type { Permission } from "../../../shared/permissions";
 
+// Where the server lives. Empty means "the same address as this page" (the shop computer, or the dev proxy).
+// When the screens are hosted separately (for example on Vercel) VITE_API_URL points at the server instead.
+export const API_BASE = ((import.meta.env.VITE_API_URL as string | undefined) ?? "").replace(/\/+$/, "");
+export const apiUrl = (path: string) => `${API_BASE}${path}`;
+
 const TOKEN_KEY = "pos_token";
 export const getToken = () => localStorage.getItem(TOKEN_KEY) ?? "";
 export const setToken = (t: string) => (t ? localStorage.setItem(TOKEN_KEY, t) : localStorage.removeItem(TOKEN_KEY));
@@ -14,7 +19,7 @@ export class ApiError extends Error {
 export async function api<T = any>(method: string, path: string, body?: unknown): Promise<T> {
   let res: Response;
   try {
-    res = await fetch(path, {
+    res = await fetch(apiUrl(path), {
       method,
       headers: { ...(body !== undefined ? { "content-type": "application/json" } : {}), ...(getToken() ? { authorization: `Bearer ${getToken()}` } : {}) },
       body: body === undefined ? undefined : JSON.stringify(body),

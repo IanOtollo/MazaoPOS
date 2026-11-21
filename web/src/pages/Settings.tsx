@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { Download, Lock, Plus, Trash2 } from "lucide-react";
 import { ADMIN_EXCLUDED, PERMISSIONS, PERMISSION_GROUPS, type Permission } from "../../../shared/permissions";
-import { api, get, getToken, patch, post, put, useAuth } from "../lib/api";
+import { api, apiUrl, get, getToken, patch, post, put, useAuth } from "../lib/api";
 import { Button, ErrorLine, Field, Input, Modal, PageHead, inputCls, td, th, Select } from "../lib/ui";
 import { useConfirm, useToast } from "../lib/toast";
 import { setBrand, setLogo, useLogoUrl } from "../lib/brand";
@@ -341,7 +341,7 @@ function Backups() {
 
   const download = async (name: string) => {
     try {
-      const res = await fetch(`/api/backups/${name}`, { headers: { authorization: `Bearer ${getToken()}` } });
+      const res = await fetch(apiUrl(`/api/backups/${name}`), { headers: { authorization: `Bearer ${getToken()}` } });
       if (!res.ok) throw new Error("Could not download the backup");
       const url = URL.createObjectURL(await res.blob());
       const a = document.createElement("a");

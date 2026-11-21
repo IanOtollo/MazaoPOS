@@ -1,5 +1,5 @@
 import { useEffect, useRef, useSyncExternalStore } from "react";
-import { getToken } from "./api";
+import { apiUrl, getToken } from "./api";
 
 /*
  * Client side of the live channel (see server/events.ts).
@@ -33,7 +33,7 @@ async function leaderLoop(my: number) {
   while (started && my === gen) {
     abort = new AbortController();
     try {
-      const res = await fetch("/api/events", { headers: { authorization: `Bearer ${getToken()}`, accept: "text/event-stream" }, signal: abort.signal });
+      const res = await fetch(apiUrl("/api/events"), { headers: { authorization: `Bearer ${getToken()}`, accept: "text/event-stream" }, signal: abort.signal });
       if (res.status === 401) { stopLive(); return; } // signed out elsewhere
       if (!res.ok || !res.body) throw new Error("no stream");
       announce(true);

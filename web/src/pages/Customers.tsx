@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { MessageCircle, Phone, Plus, Printer } from "lucide-react";
 import { fmtKES, toCents } from "../../../shared/money";
-import { fmtTime, get, patch, post, useAuth, type Customer } from "../lib/api";
+import { apiUrl, fmtTime, get, patch, post, useAuth, type Customer } from "../lib/api";
 import { fmtDay } from "../lib/range";
 import { useToast } from "../lib/toast";
 import { useLive } from "../lib/live";
@@ -252,7 +252,7 @@ function AccountView({ id, onClose, onChanged, onEdit }: { id: number; onClose: 
 
       {/* printed version, shown only when printing */}
       <div className="print-area hidden print:block text-[12px] text-black">
-        {biz.logo_version && <img src={`/api/logo?v=${biz.logo_version}`} alt="" style={{ maxHeight: 56, marginBottom: 6 }} />}
+        {biz.logo_version && <img src={apiUrl(`/api/logo?v=${biz.logo_version}`)} alt="" style={{ maxHeight: 56, marginBottom: 6 }} />}
         <h1 style={{ fontSize: 20, fontWeight: 700 }}>{biz.business_name}</h1>
         <h2 style={{ fontSize: 16, fontWeight: 700, marginTop: 14 }}>Statement of account</h2>
         <div>{c.name}{c.phone ? `  ·  ${c.phone}` : ""}</div>

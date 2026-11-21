@@ -1,7 +1,7 @@
 {
-  "name": "hardware-pos",
+  "name": "mazao-pos",
   "version": "1.0.0",
-  "description": "",
+  "description": "Point of sale for a hardware shop: fast till, stock, suppliers, customers on credit, reports. Runs on the shop computer and keeps selling without internet.",
   "scripts": {
     "dev": "concurrently -k -n api,web \"npm:dev:server\" \"npm:dev:web\"",
     "dev:server": "tsx watch server/index.ts",
@@ -9,11 +9,12 @@
     "build:web": "vite build --config web/vite.config.ts",
     "start": "tsx server/index.ts",
     "typecheck": "tsc --noEmit -p tsconfig.json",
-    "test": "tsx server/smoke.test.ts"
+    "test": "tsx server/smoke.test.ts",
+    "build": "npm run build:web"
   },
   "keywords": [],
-  "author": "",
-  "license": "ISC",
+  "author": "IanOtollo",
+  "license": "UNLICENSED",
   "type": "module",
   "dependencies": {
     "@fastify/cors": "^11.4.3",
@@ -37,5 +38,8 @@
     "typescript": "^7.0.2",
     "vite": "^8.3.8"
   },
-  "private": true
+  "private": true,
+  "engines": {
+    "node": ">=22.5"
+  }
 }

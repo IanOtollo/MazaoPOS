@@ -1,5 +1,5 @@
 import { fmtKES, fmtQty } from "../../../shared/money";
-import { fmtTime } from "./api";
+import { apiUrl, fmtTime } from "./api";
 
 export interface SaleDoc {
   receipt_no: string; kind: string; created_at: string; cashier: string; customer_name: string | null; customer_pin: string | null;
@@ -15,7 +15,7 @@ export function Receipt({ sale, biz }: { sale: SaleDoc; biz: Record<string, stri
   return (
     <div className="receipt">
       <div style={{ textAlign: "center" }}>
-        {biz.logo_version && <img src={`/api/logo?v=${biz.logo_version}`} alt="" style={{ display: "block", margin: "0 auto 4px", maxHeight: 48, maxWidth: "60%" }} />}
+        {biz.logo_version && <img src={apiUrl(`/api/logo?v=${biz.logo_version}`)} alt="" style={{ display: "block", margin: "0 auto 4px", maxHeight: 48, maxWidth: "60%" }} />}
         <strong style={{ fontSize: 14 }}>{biz.business_name}</strong>
         {biz.address && <div>{biz.address}</div>}
         {biz.phone && <div>Tel {biz.phone}</div>}

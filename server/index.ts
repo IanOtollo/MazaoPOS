@@ -18,7 +18,10 @@ import { backupRoutes, startBackupSchedule } from "./routes/backup.ts";
 seed();
 
 const app = Fastify({ logger: { level: "warn" } });
-await app.register(cors, { origin: true });
+// CORS_ORIGIN (comma separated) limits which web addresses may use the server; empty allows any.
+// Sign-in uses a token in a header, not cookies, so another site cannot ride on someone's session.
+const allowedOrigins = process.env.CORS_ORIGIN?.split(",").map((s) => s.trim()).filter(Boolean);
+await app.register(cors, { origin: allowedOrigins?.length ? allowedOrigins : true });
 
 app.setErrorHandler((err: Error & { statusCode?: number }, _req, reply) => {
   if (err instanceof HttpError) return reply.status(err.status).send({ error: err.message });
@@ -48,6 +51,8 @@ const MIME: Record<string, string> = {
 };
 if (existsSync(dist)) {
   app.get("/*", async (req, reply) => {
+    // an unknown API address must be a real 404, not the home page
+    if (req.url.startsWith("/api/")) return reply.status(404).send({ error: "Not found" });
     const path = (req.url.split("?")[0] ?? "/").replace(/\.\./g, "");
     let file = join(dist, path);
     if (!existsSync(file) || path === "/") file = join(dist, "index.html");

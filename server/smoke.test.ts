@@ -652,6 +652,21 @@ try {
   assert.equal((await fetch(base + "/api/logo")).status, 404, "gone after removal");
   assert.equal((await api("GET", "/api/settings")).body.logo_version, "");
 
+  // =================== screens hosted on another address (e.g. Vercel) ===================
+  {
+    const site = "https://mazaopos.vercel.app";
+    const pre = await fetch(base + "/api/sales", { method: "OPTIONS", headers: { origin: site, "access-control-request-method": "POST", "access-control-request-headers": "authorization,content-type" } });
+    assert.ok(pre.status === 204 || pre.status === 200, "the browser's pre-flight check is answered: " + pre.status);
+    assert.equal(pre.headers.get("access-control-allow-origin"), site, "the hosted screens are allowed to call the API");
+    assert.match(pre.headers.get("access-control-allow-headers") ?? "", /authorization/i, "the sign-in header is allowed");
+
+    const ac2 = new AbortController();
+    const live = await fetch(base + "/api/events", { headers: { authorization: "Bearer " + token, origin: site }, signal: ac2.signal });
+    assert.equal(live.status, 200);
+    assert.equal(live.headers.get("access-control-allow-origin"), site, "the live stream also carries the CORS header, or a hosted page could not read it");
+    ac2.abort();
+  }
+
   console.log("\nALL CHECKS PASSED");
 } catch (e) {
   console.error("\nFAILED:", e);
