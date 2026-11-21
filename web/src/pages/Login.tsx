@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Delete } from "lucide-react";
 import { get, post, type User } from "../lib/api";
-import { setBrand, setLogo, useLogoUrl } from "../lib/brand";
+import { brandOr, setBrand, setLogo, useLogoUrl } from "../lib/brand";
 
 const MAX_PIN = 8;
 
@@ -49,7 +49,7 @@ export default function Login({ onLogin }: { onLogin: (u: User, token: string) =
     <div className="h-full flex items-center justify-center bg-slate-100 p-4">
       <div className="w-full max-w-[20rem]">
         {logo && <img src={logo} alt="" className="mx-auto mb-3 h-20 max-w-[12rem] object-contain" />}
-        <h1 className="text-center text-2xl font-bold tracking-tight mb-1">{name || "Sign in"}</h1>
+        <h1 className="text-center text-2xl font-bold tracking-tight mb-1">{brandOr(name)}</h1>
         <p className="text-center text-slate-500 mb-6">Enter your PIN</p>
 
         <div className="bg-white rounded-xl border border-slate-200 shadow-card p-5">
@@ -68,7 +68,7 @@ export default function Login({ onLogin }: { onLogin: (u: User, token: string) =
 
           <button onClick={() => submit()} disabled={pin.length < 4 || busy}
             className="mt-3 w-full h-12 rounded-lg bg-slate-900 text-white font-semibold hover:bg-slate-700 disabled:opacity-40 transition-colors">
-            {busy ? "Signing in" : "Sign in"}
+            {busy ? "Please wait" : "Enter"}
           </button>
           <p role="alert" className="mt-3 min-h-5 text-center text-sm font-medium text-danger">{err}</p>
         </div>
