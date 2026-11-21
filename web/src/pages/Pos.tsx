@@ -1,7 +1,7 @@
 import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 import { ArrowLeft, Banknote, Minus, Percent, Plus, ScanBarcode, Search, ShoppingCart, Trash2, UserRound, X } from "lucide-react";
 import { fmtKES, fmtQty, lineTotal, toCents, vatOfGross } from "../../../shared/money";
-import { get, post, priceFor, useAuth, type Customer, type Product, type Unit } from "../lib/api";
+import { fetchAllProducts, get, post, priceFor, useAuth, type Customer, type Product, type Unit } from "../lib/api";
 import { Button, ErrorLine, Field, Input, Modal, NumInput, td, th } from "../lib/ui";
 import { Receipt, type SaleDoc } from "../lib/Receipt";
 import { PayModal } from "./PayModal";
@@ -40,7 +40,7 @@ export default function Pos() {
   // The whole catalogue lives in memory: search/filter is instant and needs no network.
   const [catalog, setCatalog] = useState<Product[]>([]);
   const reloadCatalog = useCallback(
-    () => get<Product[]>("/api/products?limit=10000").then(setCatalog).catch((e) => setMsg(e.message)),
+    () => fetchAllProducts().then(setCatalog).catch((e) => setMsg(e.message)),
     [],
   );
   useEffect(() => { reloadCatalog(); }, [reloadCatalog]);

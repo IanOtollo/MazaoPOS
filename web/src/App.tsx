@@ -16,6 +16,8 @@ import Dashboard from "./pages/Dashboard";
 import Shift from "./pages/Shift";
 import Settings from "./pages/Settings";
 import Suppliers from "./pages/Suppliers";
+import { SiteFooter } from "./lib/Footer";
+import NotFound from "./pages/NotFound";
 
 const COLLAPSE_KEY = "pos_sidebar_collapsed";
 const CLOSED_KEY = "pos_nav_closed";
@@ -271,6 +273,7 @@ function Shell({ user, onLogout }: { user: User; onLogout: () => void }) {
         </div>
 
 
+        <div className="flex-1 min-h-0 min-w-0 flex flex-col">
         <main className="flex-1 min-h-0 min-w-0 overflow-auto">
           {lost && <div role="status" className="sticky top-0 z-20 bg-amber-100 text-amber-900 text-sm font-medium px-4 py-2 text-center print:hidden">Lost the connection to the shop computer. Retrying, and new activity will appear when it is back.</div>}
           <Routes>
@@ -284,9 +287,11 @@ function Shell({ user, onLogout }: { user: User; onLogout: () => void }) {
             <Route path="/shift" element={<Shift />} />
             <Route path="/reports" element={canReports ? <Reports /> : <Navigate to={home} replace />} />
             <Route path="/settings" element={canAdmin ? <Settings /> : <Navigate to={home} replace />} />
-            <Route path="*" element={<Navigate to={home} replace />} />
+            <Route path="*" element={<NotFound home={home} />} />
           </Routes>
         </main>
+        <SiteFooter />
+        </div>
       </div>
     </AuthCtx.Provider>
   );

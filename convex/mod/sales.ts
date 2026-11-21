@@ -355,7 +355,7 @@ export const routes: Record<string, Handler> = {
     const mine = !can(user, "sales.view_all");
     const needle = (query.q ?? "").toLowerCase();
     const day = await ctx.db.query("sales").withIndex("by_created", (q) => q.gte("createdAt", from).lt("createdAt", to)).order("desc").collect();
-    const rows = day.filter((s) => (!mine || s.userId === user.id) && (!needle || s.receiptNo.toLowerCase().includes(needle))).sort((a, b) => b.id - a.id).slice(0, 300);
+    const rows = day.filter((s) => (!mine || s.userId === user.id) && (!needle || s.receiptNo.toLowerCase().includes(needle))).sort((a, b) => b.id - a.id);
     const users = new Map((await ctx.db.query("users").collect()).map((u) => [u.id, u.name]));
     const customers = new Map((await ctx.db.query("customers").collect()).map((c) => [c.id, c.name]));
     return rows.map((s) => {

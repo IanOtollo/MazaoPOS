@@ -1,7 +1,7 @@
 import type { Doc } from "../_generated/dataModel";
 import {
   audit, authenticate, can, fail, getSetting, moveStock, nextId, requirePerm, stockOnHand,
-  type Ctx, type Handler,
+  type Ctx, type Handler, type Req,
 } from "../lib";
 
 /*
@@ -152,6 +152,53 @@ const MAX_IMPORT_ROWS = 1500;
 const FRACTIONAL = new Set(["m", "kg", "ltr", "l", "g", "ft", "yd", "sqm"]);
 const str = (v: unknown) => (v === null || v === undefined ? undefined : String(v));
 
+/** One page of the filtered, sorted product list, plus how many products match in all. */
+async function listProducts(ctx: Ctx, req: Req, offset: number, limit: number) {
+  const { token, query } = req;
+  const user = await authenticate(ctx, token);
+  const q = query.q ?? "";
+  const categoryId = query.categoryId ? Number(query.categoryId) : undefined;
+
+  let products = await ctx.db.query("products").collect();
+  if (!query.all) products = products.filter((p) => p.active);
+  if (categoryId !== undefined) products = products.filter((p) => p.categoryId === categoryId);
+  if (q.trim()) {
+    // every word must appear in the name, code or a barcode (case-insensitive, like SQL LIKE)
+    const words = q.trim().toLowerCase().split(/\s+/);
+    products = products.filter((p) =>
+      words.every((w) =>
+        p.name.toLowerCase().includes(w) || p.sku.toLowerCase().includes(w) || (p.barcode ?? "").toLowerCase().includes(w) ||
+        p.units.some((u) => (u.barcode ?? "").toLowerCase().includes(w)),
+      ),
+    );
+  }
+  // an exact barcode or code hit sorts first, then by name
+  const exact = (p: ProductDoc) => (q !== "" && (p.barcode === q || p.sku === q || p.units.some((u) => u.barcode === q)) ? 1 : 0);
+  products.sort((a, b) => exact(b) - exact(a) || (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
+  const cats = new Map((await ctx.db.query("categories").collect()).map((c) => [c.id, c.name]));
+  const qty = new Map<number, { shop: number; store: number }>();
+  for (const s of await ctx.db.query("stock").collect()) {
+    const e = qty.get(s.productId) ?? { shop: 0, store: 0 };
+    if (s.locationId === SHOP) e.shop += s.qtyMilli;
+    else if (s.locationId === STORE) e.store += s.qtyMilli;
+    qty.set(s.productId, e);
+  }
+  const hide = !can(user, "products.view_cost");
+  // totals over every matching product (not just this page), so the summary cards stay right
+  const total = products.length;
+  let low = 0, atCost = 0, atPrice = 0;
+  for (const p of products) {
+    const e = qty.get(p.id);
+    const on = (e?.shop ?? 0) + (e?.store ?? 0);
+    if (p.reorderLevelMilli > 0 && on <= p.reorderLevelMilli) low++;
+    atCost += Math.round((p.costCents * Math.max(0, on)) / 1000);
+    atPrice += Math.round((p.priceRetailCents * Math.max(0, on)) / 1000);
+  }
+  products = products.slice(offset, offset + limit);
+  const items = products.map((p) => productRow(p, p.categoryId !== undefined ? cats.get(p.categoryId) ?? null : null, qty.get(p.id)?.shop ?? 0, qty.get(p.id)?.store ?? 0, hide));
+  return { total, items, summary: { items: total, low, at_price_cents: atPrice, at_cost_cents: hide ? null : atCost } };
+}
+
 export const routes: Record<string, Handler> = {
   // ---------------- locations & categories ----------------
   "GET /api/locations": async (ctx, { token }) => {
@@ -176,40 +223,13 @@ export const routes: Record<string, Handler> = {
   },
 
   // ---------------- products ----------------
-  "GET /api/products": async (ctx, { token, query }) => {
-    const user = await authenticate(ctx, token);
-    const max = Math.min(Math.max(Number(query.limit) || 200, 1), 10000);
-    const q = query.q ?? "";
-    const categoryId = query.categoryId ? Number(query.categoryId) : undefined;
+  "GET /api/products": async (ctx, req) => (await listProducts(ctx, req, 0, Math.min(Math.max(Number(req.query.limit) || 200, 1), 10000))).items,
 
-    let products = await ctx.db.query("products").collect();
-    if (!query.all) products = products.filter((p) => p.active);
-    if (categoryId !== undefined) products = products.filter((p) => p.categoryId === categoryId);
-    if (q.trim()) {
-      // every word must appear in the name, code or a barcode (case-insensitive, like SQL LIKE)
-      const words = q.trim().toLowerCase().split(/\s+/);
-      products = products.filter((p) =>
-        words.every((w) =>
-          p.name.toLowerCase().includes(w) || p.sku.toLowerCase().includes(w) || (p.barcode ?? "").toLowerCase().includes(w) ||
-          p.units.some((u) => (u.barcode ?? "").toLowerCase().includes(w)),
-        ),
-      );
-    }
-    // an exact barcode or code hit sorts first, then by name
-    const exact = (p: ProductDoc) => (q !== "" && (p.barcode === q || p.sku === q || p.units.some((u) => u.barcode === q)) ? 1 : 0);
-    products.sort((a, b) => exact(b) - exact(a) || (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
-    products = products.slice(0, max);
-
-    const cats = new Map((await ctx.db.query("categories").collect()).map((c) => [c.id, c.name]));
-    const qty = new Map<number, { shop: number; store: number }>();
-    for (const s of await ctx.db.query("stock").collect()) {
-      const e = qty.get(s.productId) ?? { shop: 0, store: 0 };
-      if (s.locationId === SHOP) e.shop += s.qtyMilli;
-      else if (s.locationId === STORE) e.store += s.qtyMilli;
-      qty.set(s.productId, e);
-    }
-    const hide = !can(user, "products.view_cost");
-    return products.map((p) => productRow(p, p.categoryId !== undefined ? cats.get(p.categoryId) ?? null : null, qty.get(p.id)?.shop ?? 0, qty.get(p.id)?.store ?? 0, hide));
+  // the Inventory list and the export read this one page at a time, so a big catalogue never gets cut off
+  "GET /api/products/page": async (ctx, req) => {
+    const limit = Math.min(Math.max(Number(req.query.limit) || 50, 1), 500);
+    const offset = Math.max(Number(req.query.offset) || 0, 0);
+    return listProducts(ctx, req, offset, limit);
   },
 
   "POST /api/products": async (ctx, { token, body }) => {

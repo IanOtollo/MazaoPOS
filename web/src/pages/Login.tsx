@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Delete } from "lucide-react";
 import { get, post, type User } from "../lib/api";
 import { brandOr, setBrand, setLogo, useLogoUrl } from "../lib/brand";
+import { SiteFooter } from "../lib/Footer";
 
 const MAX_PIN = 8;
 
@@ -46,7 +47,8 @@ export default function Login({ onLogin }: { onLogin: (u: User, token: string) =
   const key = "h-14 rounded-lg border border-slate-300 bg-white text-xl font-semibold text-slate-900 hover:bg-slate-50 active:bg-slate-100 transition-colors";
 
   return (
-    <div className="h-full flex items-center justify-center bg-slate-100 p-4">
+    <div className="h-full flex flex-col bg-slate-100">
+      <div className="flex-1 min-h-0 overflow-auto flex items-center justify-center p-4">
       <div className="w-full max-w-[20rem]">
         {logo && <img src={logo} alt="" className="mx-auto mb-3 h-20 max-w-[12rem] object-contain" />}
         <h1 className="text-center text-2xl font-bold tracking-tight mb-1">{brandOr(name)}</h1>
@@ -73,6 +75,8 @@ export default function Login({ onLogin }: { onLogin: (u: User, token: string) =
           <p role="alert" className="mt-3 min-h-5 text-center text-sm font-medium text-danger">{err}</p>
         </div>
       </div>
+      </div>
+      <SiteFooter variant="auth" />
     </div>
   );
 }

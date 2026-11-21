@@ -58,6 +58,16 @@ export interface Product {
   price_retail_cents: number; price_contractor_cents: number | null; price_wholesale_cents: number | null;
   reorder_level_milli: number; active: number; stock_shop: number; stock_store: number;
 }
+/** Every product, fetched a page at a time so a big catalogue is never cut off. extra is a query string such as "&all=1". */
+export async function fetchAllProducts(extra = ""): Promise<Product[]> {
+  const out: Product[] = [];
+  for (let offset = 0; ; offset += 500) {
+    const r = await get<{ items: Product[]; total: number }>(`/api/products/page?limit=500&offset=${offset}${extra}`);
+    out.push(...r.items);
+    if (!r.items.length || out.length >= r.total) return out;
+  }
+}
+
 export interface Customer {
   id: number; name: string; phone: string | null; kra_pin: string | null;
   tier: "retail" | "contractor" | "wholesale"; credit_limit_cents: number; credit_days?: number; credit_stopped?: number; credit_available_cents?: number; balance_cents: number;

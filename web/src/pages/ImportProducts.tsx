@@ -51,6 +51,8 @@ const TEMPLATE =
   "Bamburi Cement 50kg,CEM-BAM,,Cement,bag,Exempt,690,780,760,,50,120,400\n" +
   "Nails 3 inch,NL-3,,Fasteners,kg,16,115,160,145,,20,80,100\n";
 
+const CHUNK = 1000; // rows per request, so a price list of any size goes through
+
 interface Preview { total: number; valid: number; invalid: number; errors: { row: number; message: string }[]; sample: string[] }
 
 export function ImportProducts({ onClose, onDone }: { onClose: () => void; onDone: (n: number) => void }) {
@@ -85,16 +87,33 @@ export function ImportProducts({ onClose, onDone }: { onClose: () => void; onDon
     });
     setRows(objs);
     setBusy(true);
-    try { setPreview(await post<Preview>("/api/products/import", { rows: objs, dryRun: true })); }
-    catch (e) { setErr((e as Error).message); }
+    try {
+      const sum: Preview = { total: 0, valid: 0, invalid: 0, errors: [], sample: [] };
+      for (let at = 0; at < objs.length; at += CHUNK) {
+        const p = await post<Preview>("/api/products/import", { rows: objs.slice(at, at + CHUNK), dryRun: true });
+        sum.total += p.total; sum.valid += p.valid; sum.invalid += p.invalid;
+        sum.errors.push(...p.errors.map((e) => ({ ...e, row: e.row + at })));
+        if (!sum.sample.length) sum.sample = p.sample;
+      }
+      setPreview(sum);
+    } catch (e) { setErr((e as Error).message); }
     setBusy(false);
   };
 
   const run = async () => {
     if (!rows) return;
     setBusy(true);
-    try { const r = await post<{ imported: number }>("/api/products/import", { rows, dryRun: false }); onDone(r.imported); }
-    catch (e) { setErr((e as Error).message); setBusy(false); }
+    let done = 0;
+    try {
+      for (let at = 0; at < rows.length; at += CHUNK) {
+        const r = await post<{ imported: number }>("/api/products/import", { rows: rows.slice(at, at + CHUNK), dryRun: false });
+        done += r.imported;
+      }
+      onDone(done);
+    } catch (e) {
+      setErr(done ? `${done} product${done === 1 ? " was" : "s were"} imported before this problem: ${(e as Error).message}. Import the file again to add the rest; products already added are skipped.` : (e as Error).message);
+      setBusy(false);
+    }
   };
 
   return (

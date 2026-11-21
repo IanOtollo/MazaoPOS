@@ -57,7 +57,7 @@ export const routes: Record<string, Handler> = {
     if (q) rows = rows.filter((c) => c.name.toLowerCase().includes(q) || (c.phone ?? "").toLowerCase().includes(q));
     rows.sort((a, b) => a.name.localeCompare(b.name));
     const mgr = can(user, "customers.manage");
-    return rows.slice(0, 200).map((c) => ({
+    return rows.map((c) => ({
       ...row(c),
       credit_available_cents: Math.max(0, c.creditLimitCents - Math.max(0, c.balanceCents)),
       balance_cents: mgr ? c.balanceCents : 0, // a cashier does not see who owes what
@@ -124,7 +124,7 @@ export const routes: Record<string, Handler> = {
     if (!c) return fail(404, "Customer not found");
     const all = await ctx.db.query("customerLedger").withIndex("by_customer", (q) => q.eq("customerId", id)).collect();
     all.sort((a, b) => b.id - a.id);
-    const ledger = all.slice(0, 200).map((l) => ({
+    const ledger = all.slice(0, 1000).map((l) => ({
       id: l.id, customer_id: l.customerId, amount_cents: l.amountCents, type: l.type, ref_type: l.refType ?? null, ref_id: l.refId ?? null,
       method: l.method ?? null, note: l.note ?? null, user_id: l.userId ?? null, created_at: iso(l.createdAt),
     }));

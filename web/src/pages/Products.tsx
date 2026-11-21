@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { fmtKES, fmtQty, toCents, toMilli } from "../../../shared/money";
-import { get, patch, post, put, useAuth, type Product } from "../lib/api";
-import { ArrowLeftRight, ClipboardCheck, Package, PackagePlus, Pencil, Plus, SearchX, X } from "lucide-react";
+import { fetchAllProducts, get, patch, post, put, useAuth, type Product } from "../lib/api";
+import { ArrowLeftRight, ClipboardCheck, Download, Package, PackagePlus, Pencil, Plus, SearchX, X } from "lucide-react";
 import { Button, EmptyState, ErrorLine, Field, IconButton, Input, Modal, NumInput, PageHead, inputCls, td, th, Select } from "../lib/ui";
 import { useToast } from "../lib/toast";
 import { useLive } from "../lib/live";
@@ -9,6 +9,8 @@ import { ImportProducts } from "./ImportProducts";
 
 interface Cat { id: number; name: string }
 const UNITS = ["pc", "kg", "m", "bag", "box", "ltr", "roll", "pkt", "set", "pair", "sheet", "tin"];
+
+const PAGE = 50; // products per page
 
 export default function Products() {
   const { can } = useAuth();
@@ -23,10 +25,45 @@ export default function Products() {
   const [importing, setImporting] = useState(false);
   const [stock, setStock] = useState<{ p: Product; mode: "receive" | "count" | "transfer" } | null>(null);
 
+  const [exporting, setExporting] = useState(false);
+
+  /** Every product (also inactive ones) as a CSV that the Import button can read back. */
+  const exportCsv = async () => {
+    setExporting(true);
+    try {
+      const all = await fetchAllProducts("&all=1");
+      const esc = (v: string | number | null | undefined) => { const t = String(v ?? ""); return /[",;\n\r]/.test(t) ? `"${t.replace(/"/g, '""')}"` : t; };
+      const money = (c: number | null) => (c == null ? "" : (c / 100).toString());
+      const qty = (m: number) => (m / 1000).toString();
+      const vat = (c: string) => (c === "E" ? "Exempt" : c === "B" ? "0" : "16");
+      const head = ["name", "code", "barcode", "category", "unit", "vat", ...(canCost ? ["cost"] : []), "price", "contractor", "wholesale", "reorder", "shop stock", "store stock"];
+      const lines = all.map((p) => [p.name, p.sku, p.barcode, p.category, p.unit, vat(p.vat_code), ...(canCost ? [money(p.cost_cents)] : []), money(p.price_retail_cents), money(p.price_contractor_cents), money(p.price_wholesale_cents), qty(p.reorder_level_milli), qty(p.stock_shop), qty(p.stock_store)].map(esc).join(","));
+      const blob = new Blob(["﻿" + [head.join(","), ...lines].join("\r\n")], { type: "text/csv;charset=utf-8" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url; a.download = `products-${new Date().toISOString().slice(0, 10)}.csv`; a.click();
+      URL.revokeObjectURL(url);
+      toast({ msg: `${all.length} product${all.length === 1 ? "" : "s"} exported` });
+    } catch (e) { toast({ msg: (e as Error).message, kind: "err" }); }
+    setExporting(false);
+  };
+
+  const [page, setPage] = useState(0);
+  const [total, setTotal] = useState(0);
+  const [summary, setSummary] = useState<{ items: number; low: number; at_price_cents: number; at_cost_cents: number | null } | null>(null);
+  const [loaded, setLoaded] = useState(false);
+  const lastPage = Math.max(0, Math.ceil(total / PAGE) - 1);
+
   const load = useCallback(
-    () => get<Product[]>(`/api/products?q=${encodeURIComponent(q)}${showInactive ? "&all=1" : ""}`).then(setRows),
-    [q, showInactive],
+    () => get<{ items: Product[]; total: number; summary: typeof summary }>(`/api/products/page?limit=${PAGE}&offset=${page * PAGE}&q=${encodeURIComponent(q)}${showInactive ? "&all=1" : ""}`).then((r) => {
+      setRows(r.items); setTotal(r.total); setSummary(r.summary); setLoaded(true);
+      // the list shrank (a product was removed or filtered away) and this page no longer exists: step back
+      if (!r.items.length && r.total > 0 && page > 0) setPage(Math.max(0, Math.ceil(r.total / PAGE) - 1));
+    }),
+    [q, showInactive, page],
   );
+  // a new search or filter starts again from the first page
+  useEffect(() => { setPage(0); }, [q, showInactive]);
   useEffect(() => { const t = setTimeout(load, 150); return () => clearTimeout(t); }, [load]);
   useLive(["products", "stock"], load);
 
@@ -36,15 +73,16 @@ export default function Products() {
         <Input placeholder="Search name, code, barcode" value={q} onChange={(e) => setQ(e.target.value)} className="!w-64" />
         {canManage && <label className="text-sm flex items-center gap-1"><input type="checkbox" checked={showInactive} onChange={(e) => setShowInactive(e.target.checked)} /> Show inactive</label>}
         {canManage && <Button onClick={() => setImporting(true)}>Import</Button>}
+        <Button onClick={exportCsv} disabled={exporting} className="flex items-center gap-1.5"><Download className="size-4" />{exporting ? "Exporting" : "Export"}</Button>
         {canManage && <Button variant="primary" onClick={() => setEdit("new")}>Add product</Button>}
       </PageHead>
-      {!q && !showInactive && rows.length > 0 && (() => {
-        const low = rows.filter((p) => p.reorder_level_milli > 0 && p.stock_shop + p.stock_store <= p.reorder_level_milli).length;
-        const atCost = rows.reduce((a, p) => a + Math.round((p.cost_cents * Math.max(0, p.stock_shop + p.stock_store)) / 1000), 0);
-        const atPrice = rows.reduce((a, p) => a + Math.round((p.price_retail_cents * Math.max(0, p.stock_shop + p.stock_store)) / 1000), 0);
+      {!q && !showInactive && summary && summary.items > 0 && (() => {
+        const low = summary.low;
+        const atCost = summary.at_cost_cents ?? 0;
+        const atPrice = summary.at_price_cents;
         return (
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-4">
-            <Stat label="Items" value={String(rows.length)} />
+            <Stat label="Items" value={summary.items.toLocaleString("en-KE")} />
             <Stat label="Stock value at selling price" value={`KES ${Math.round(atPrice / 100).toLocaleString("en-KE")}`} />
             {canCost && <Stat label="Stock value at cost" value={`KES ${Math.round(atCost / 100).toLocaleString("en-KE")}`} />}
             <Stat label="Low on stock" value={String(low)} warn={low > 0} />
@@ -85,7 +123,7 @@ export default function Products() {
                 </tr>
               );
             })}
-            {!rows.length && (
+            {loaded && !rows.length && (
               <tr><td colSpan={8}>
                 {q ? (
                   <EmptyState icon={<SearchX className="size-8" />} title="No products match your search" hint={`Nothing found for "${q}". Check the spelling or try the item code.`} />
@@ -99,6 +137,18 @@ export default function Products() {
           </tbody>
         </table>
       </div>
+      {total > PAGE && (
+        <div className="flex items-center justify-between gap-3 mt-3 text-sm text-slate-600" role="navigation" aria-label="Pages of products">
+          <span>{(page * PAGE + 1).toLocaleString("en-KE")} to {Math.min((page + 1) * PAGE, total).toLocaleString("en-KE")} of {total.toLocaleString("en-KE")} products</span>
+          <div className="flex items-center gap-2">
+            <Button onClick={() => setPage(0)} disabled={page === 0} className="!px-3">First</Button>
+            <Button onClick={() => setPage((p) => Math.max(0, p - 1))} disabled={page === 0} className="!px-3">Previous</Button>
+            <span className="px-1 tabular-nums">Page {page + 1} of {lastPage + 1}</span>
+            <Button onClick={() => setPage((p) => Math.min(lastPage, p + 1))} disabled={page >= lastPage} className="!px-3">Next</Button>
+            <Button onClick={() => setPage(lastPage)} disabled={page >= lastPage} className="!px-3">Last</Button>
+          </div>
+        </div>
+      )}
       {importing && <ImportProducts onClose={() => setImporting(false)} onDone={(n) => { setImporting(false); toast({ msg: `${n} product${n === 1 ? "" : "s"} imported` }); load(); }} />}
       {edit && <ProductForm product={edit === "new" ? null : edit} onClose={() => setEdit(null)}
         onSaved={() => { toast({ msg: edit === "new" ? "Product added" : "Product updated" }); setEdit(null); load(); }} />}

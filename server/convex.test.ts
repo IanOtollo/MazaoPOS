@@ -219,6 +219,36 @@ try {
   imp = await api("POST", "/api/products/import", { rows: [rowsIn[0]], dryRun: true });
   assert.equal(imp.body.invalid, 1, "re-importing the same file is refused, not duplicated");
 
+  // =================== big catalogues: nothing is cut off ===================
+  {
+    const totalNow = async () => (await api("GET", "/api/products/page?limit=1")).body.total as number;
+    const base0 = await totalNow();
+    for (let part = 0; part < 2; part++) {
+      const rows = Array.from({ length: 550 }, (_, i) => ({ name: `Bulk item ${part * 550 + i}`, sku: `BULK-${part * 550 + i}`, unit: "pc", vat: "16", cost: "10", retail: "20", shopStock: "5" }));
+      const r = await api("POST", "/api/products/import", { rows, dryRun: false });
+      assert.equal(r.status, 200, JSON.stringify(r.body).slice(0, 200));
+      assert.equal(r.body.imported, 550);
+    }
+    assert.equal(await totalNow(), base0 + 1100, "all 1,100 are counted");
+    const seen = new Set<number>();
+    let pages = 0;
+    for (let offset = 0; ; offset += 500) {
+      const pg = await api("GET", `/api/products/page?limit=500&offset=${offset}&all=1`);
+      assert.equal(pg.status, 200);
+      for (const p of pg.body.items) { assert.ok(!seen.has(p.id), "no product appears on two pages"); seen.add(p.id); }
+      pages++;
+      if (!pg.body.items.length || seen.size >= pg.body.total) break;
+    }
+    assert.equal(seen.size, base0 + 1100, "reading every page returns every product");
+    assert.ok(pages >= 3, "it really was split into pages");
+    const last = await api("GET", `/api/products/page?limit=50&offset=${base0 + 1100 - 10}`);
+    assert.equal(last.body.items.length, 10, "the last page holds the remainder");
+    const found = await api("GET", "/api/products/page?q=BULK-1099");
+    assert.equal(found.body.total, 1, "search reaches products far down the list");
+    const sm = (await api("GET", "/api/products/page?limit=1")).body.summary;
+    assert.equal(sm.items, base0 + 1100, "the summary covers the whole catalogue, not one page");
+  }
+
   // =================== dashboard ===================
   assert.equal((await api("GET", "/api/dashboard", undefined, cashierTok)).status, 403, "cashier cannot open the dashboard");
   const dash = await api("GET", "/api/dashboard?days=7");
