@@ -127,6 +127,7 @@ interface RoleRow { id: number; name: string; description: string; is_system: nu
 function Staff() {
   const { user } = useAuth();
   const toast = useToast();
+  const confirm = useConfirm();
   const [rows, setRows] = useState<StaffRow[]>([]);
   const [roles, setRoles] = useState<RoleRow[]>([]);
   const [modal, setModal] = useState<StaffRow | "new" | null>(null);
@@ -152,7 +153,18 @@ function Staff() {
                 <td className={td}>{r.name}{r.id === user.id && <span className="text-slate-500"> (you)</span>}</td>
                 <td className={td}>{r.role}</td>
                 <td className={td}>{r.active ? "Active" : "Disabled"}</td>
-                <td className={`${td} text-right`}><Button onClick={() => setModal(r)} className="!py-1.5">Edit</Button></td>
+                <td className={`${td} text-right whitespace-nowrap`}>
+                  <div className="inline-flex gap-2">
+                    <Button onClick={() => setModal(r)} className="!py-1.5">Edit</Button>
+                    {r.id !== user.id && (
+                      <Button variant="danger" className="!py-1.5" onClick={async () => {
+                        if (!(await confirm({ title: `Delete ${r.name}?`, body: "They will no longer be able to sign in and their PIN is freed for someone else. Their past sales and records stay on file under their name. This cannot be undone. To only stop them signing in for now, choose Edit and untick Active instead.", confirmLabel: "Delete", danger: true }))) return;
+                        try { await api("DELETE", `/api/users/${r.id}`); toast({ msg: `${r.name} deleted` }); load(); }
+                        catch (e) { toast({ msg: (e as Error).message, kind: "err" }); }
+                      }}>Delete</Button>
+                    )}
+                  </div>
+                </td>
               </tr>
             ))}
           </tbody>
@@ -270,7 +282,7 @@ function Roles() {
           {roles.map((r) => (
             <li key={r.id}>
               <button onClick={() => setSel(r.id)}
-                className={`w-full text-left rounded-lg px-3 py-2.5 transition-colors ${sel === r.id ? "bg-slate-900 text-white" : "hover:bg-slate-100"}`}>
+                className={`w-full text-left rounded-lg px-3 py-2.5 transition-colors ${sel === r.id ? "bg-accent text-white" : "hover:bg-slate-100"}`}>
                 <span className="flex items-center gap-2 font-semibold">{r.name}{r.is_system ? <Lock className="size-3.5 opacity-70" /> : null}</span>
                 <span className={`block text-xs ${sel === r.id ? "text-slate-300" : "text-slate-500"}`}>{r.user_count} {r.user_count === 1 ? "person" : "people"} · {r.permissions.length} permissions</span>
               </button>

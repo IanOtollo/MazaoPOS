@@ -28,6 +28,7 @@ export default defineSchema({
   }).index("by_numId", ["id"]).index("by_name", ["name"]),
   users: defineTable({
     id: v.number(), name: v.string(), pinHash: v.string(), roleId: v.number(), active: v.boolean(), createdAt: v.number(),
+    deletedAt: v.optional(v.number()), // deleted staff stay on file so past sales still show who made them
   }).index("by_numId", ["id"]),
   sessions: defineTable({ token: v.string(), userId: v.number(), createdAt: v.number() }).index("by_token", ["token"]).index("by_user", ["userId"]),
   loginAttempts: defineTable({ key: v.string(), count: v.number(), until: v.number() }).index("by_key", ["key"]),

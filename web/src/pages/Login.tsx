@@ -61,7 +61,7 @@ export default function Login({ onLogin }: { onLogin: (u: User, token: string) =
         <div className="bg-white rounded-xl border border-slate-200 shadow-card p-5">
           <div className="flex justify-center gap-3 h-4 mb-5" role="img" aria-label={`${pin.length} digits entered`}>
             {Array.from({ length: Math.max(4, pin.length) }).map((_, i) => (
-              <span key={i} className={`size-3.5 rounded-full border-2 transition-colors ${i < pin.length ? "bg-slate-900 border-slate-900" : "border-slate-300"}`} />
+              <span key={i} className={`size-3.5 rounded-full border-2 transition-colors ${i < pin.length ? "bg-accent border-accent" : "border-slate-300"}`} />
             ))}
           </div>
 
@@ -73,7 +73,7 @@ export default function Login({ onLogin }: { onLogin: (u: User, token: string) =
           </div>
 
           <button onClick={() => submit()} disabled={pin.length < 4 || busy}
-            className="mt-3 w-full h-12 rounded-lg bg-slate-900 text-white font-semibold hover:bg-slate-700 disabled:opacity-40 transition-colors">
+            className="mt-3 w-full h-12 rounded-lg bg-accent text-white font-semibold hover:bg-accent-dark disabled:opacity-40 transition-colors">
             {busy ? "Please wait" : "Enter"}
           </button>
           <ErrorLine msg={err} />

@@ -140,14 +140,14 @@ function Shell({ user, onLogout }: { user: User; onLogout: () => void }) {
   const item = (to: string, label: string, Icon: LucideIcon, badge?: ReactNode, end = false, active?: boolean) => (
     <NavLink key={to} to={to} end={end} title={collapsed ? label : undefined}
       className={({ isActive }) =>
-        `relative flex items-center gap-3 rounded-lg px-3 py-2 font-semibold text-sm transition-colors ${collapsed ? "justify-center" : ""} ${(active ?? isActive) ? "bg-slate-100 text-slate-900" : "text-slate-600 hover:bg-slate-50 hover:text-slate-900"}`}>
+        `relative flex items-center gap-3 rounded-lg px-3 py-2 font-semibold text-sm transition-colors ${collapsed ? "justify-center" : ""} ${(active ?? isActive) ? "bg-accent text-white shadow-sm" : "text-slate-300 hover:bg-white/10 hover:text-white"}`}>
       {({ isActive }) => (
         <>
-          {(active ?? isActive) && <span className="absolute left-0 top-2 bottom-2 w-1 rounded-r-full bg-slate-900" />}
+          {(active ?? isActive) && <span className="absolute left-0 top-2 bottom-2 w-1 rounded-r-full bg-white" />}
           <Icon className="size-5 shrink-0" />
           {!collapsed && <span className="flex-1">{label}</span>}
           {badge && (collapsed
-            ? <span className="absolute top-1 right-1.5 size-2.5 rounded-full bg-amber-400 ring-2 ring-white" />
+            ? <span className="absolute top-1 right-1.5 size-2.5 rounded-full bg-amber-400 ring-2 ring-side" />
             : badge)}
         </>
       )}
@@ -160,14 +160,14 @@ function Shell({ user, onLogout }: { user: User; onLogout: () => void }) {
   const group = (label: string, children: ReactNode) => {
     const shut = !collapsed && closed[label];
     return (
-      <div className="mt-2 first:mt-0 pt-2 first:pt-0 border-t border-slate-100 first:border-0">
+      <div className="mt-2 first:mt-0 pt-2 first:pt-0 border-t border-white/10 first:border-0">
         {!collapsed ? (
           <button onClick={() => flip(label)} aria-expanded={!shut}
-            className="w-full flex items-center justify-between rounded-lg px-3 py-2 text-[11px] font-bold uppercase tracking-wider text-slate-500 hover:bg-slate-50 hover:text-slate-900">
+            className="w-full flex items-center justify-between rounded-lg px-3 py-2 text-[11px] font-bold uppercase tracking-wider text-slate-400 hover:bg-white/10 hover:text-white">
             {label}
             <ChevronDown className={`size-4 transition-transform ${shut ? "-rotate-90" : ""}`} />
           </button>
-        ) : <div className="mx-3 mb-2 border-t border-slate-200" />}
+        ) : <div className="mx-3 mb-2 border-t border-white/15" />}
         {!shut && <div className="space-y-0.5 mt-0.5">{children}</div>}
       </div>
     );
@@ -176,19 +176,25 @@ function Shell({ user, onLogout }: { user: User; onLogout: () => void }) {
     return (
       <>
           {/* brand */}
-          <div className={`flex items-center gap-3 px-4 h-16 border-b border-slate-200 ${collapsed ? "justify-center px-0" : ""}`}>
-            {logo ? <img src={logo} alt="" className="size-9 shrink-0 rounded-lg object-contain" /> : collapsed ? <span className="size-9 shrink-0 rounded-lg bg-slate-900 text-white font-bold flex items-center justify-center">{brandOr(biz)[0]?.toUpperCase()}</span> : null}
-            {!collapsed && <span className="font-bold text-slate-900 tracking-tight leading-tight truncate">{brandOr(biz)}</span>}
+          <div className={`flex items-center gap-3 px-4 h-16 border-b border-white/10 ${collapsed ? "justify-center px-0" : ""}`}>
+            {!collapsed && logo && <img src={logo} alt="" className="size-9 shrink-0 rounded-lg object-contain bg-white p-0.5" />}
+            {!collapsed && <span className="flex-1 font-bold text-white tracking-tight leading-tight truncate">{brandOr(biz)}</span>}
+            {!inDrawer && (
+              <button onClick={toggle} title={collapsed ? "Expand menu" : "Collapse menu"} aria-label={collapsed ? "Expand menu" : "Collapse menu"} aria-expanded={!collapsed}
+                className="size-9 shrink-0 rounded-lg flex items-center justify-center text-slate-300 hover:bg-white/10 hover:text-white">
+                {collapsed ? <PanelLeftOpen className="size-5" /> : <PanelLeftClose className="size-5" />}
+              </button>
+            )}
           </div>
 
           {/* shift status */}
           {showShift && <NavLink to="/shift" title={collapsed ? (status.shiftOpenedAt ? "Shift open" : "No open shift") : undefined}
-            className={`mx-3 mt-4 rounded-lg border px-3 py-2.5 flex items-center gap-3 ${collapsed ? "justify-center px-0" : ""} ${"border-slate-200 bg-slate-50"}`}>
+            className={`mx-3 mt-4 rounded-lg border px-3 py-2.5 flex items-center gap-3 ${collapsed ? "justify-center px-0" : ""} ${"border-white/15 bg-white/10"}`}>
             <span className={`size-2.5 shrink-0 rounded-full ${status.shiftOpenedAt ? "bg-green-600" : "bg-amber-500"}`} />
             {!collapsed && (
               <span className="leading-tight min-w-0">
-                <span className={`block text-sm font-semibold ${"text-slate-900"}`}>{status.shiftOpenedAt ? "Shift open" : "No open shift"}</span>
-                <span className="block text-xs text-slate-500 truncate">{status.shiftOpenedAt ? `Since ${fmtTime(status.shiftOpenedAt)}` : "Open one on the Sell screen"}</span>
+                <span className={`block text-sm font-semibold ${"text-white"}`}>{status.shiftOpenedAt ? "Shift open" : "No open shift"}</span>
+                <span className="block text-xs text-slate-400 truncate">{status.shiftOpenedAt ? `Since ${fmtTime(status.shiftOpenedAt)}` : "Open one on the Sell screen"}</span>
               </span>
             )}
           </NavLink>}
@@ -220,24 +226,20 @@ function Shell({ user, onLogout }: { user: User; onLogout: () => void }) {
           </nav>
 
           {/* user + collapse */}
-          <div className="border-t border-slate-200 p-3 space-y-2">
-            <div className={`flex items-center gap-3 rounded-lg px-2 py-2 ${collapsed ? "justify-center px-0" : ""}`}>
-              <span className="size-9 shrink-0 rounded-full bg-slate-700 text-white font-bold flex items-center justify-center" title={collapsed ? `${user.name} (${user.role})` : undefined}>{user.name[0]?.toUpperCase()}</span>
+          <div className="border-t border-white/10 p-2 space-y-1">
+            <div className={`flex items-center gap-2.5 rounded-lg px-2 py-1 ${collapsed ? "justify-center px-0" : ""}`}>
+              <span className="size-8 shrink-0 rounded-full bg-white/15 text-white text-sm font-bold flex items-center justify-center" title={collapsed ? `${user.name} (${user.role})` : undefined}>{user.name[0]?.toUpperCase()}</span>
               {!collapsed && (
                 <>
                   <span className="leading-tight min-w-0 flex-1">
-                    <span className="block font-semibold text-slate-900 truncate">{user.name}</span>
-                    <span className="block text-xs text-slate-500 capitalize">{user.role}</span>
+                    <span className="block text-sm font-semibold text-white truncate">{user.name}</span>
+                    {user.role.toLowerCase() !== user.name.toLowerCase() && <span className="block text-xs text-slate-400 capitalize">{user.role}</span>}
                   </span>
-                  <button onClick={logout} title="Sign out" aria-label="Sign out" className="p-2 rounded-lg text-slate-500 hover:bg-slate-100 hover:text-slate-900"><LogOut className="size-5" /></button>
+                  <button onClick={logout} title="Sign out" aria-label="Sign out" className="p-1.5 rounded-lg text-slate-400 hover:bg-white/10 hover:text-white"><LogOut className="size-[18px]" /></button>
                 </>
               )}
             </div>
-            {collapsed && <button onClick={logout} title="Sign out" aria-label="Sign out" className="w-full flex justify-center p-2 rounded-lg text-slate-500 hover:bg-slate-100 hover:text-slate-900"><LogOut className="size-5" /></button>}
-            {!inDrawer && <button onClick={toggle} title={collapsed ? "Expand menu" : "Collapse menu"} aria-label={collapsed ? "Expand menu" : "Collapse menu"}
-              className={`w-full flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium text-slate-500 hover:bg-slate-100 hover:text-slate-900 ${collapsed ? "justify-center" : ""}`}>
-              {collapsed ? <PanelLeftOpen className="size-5" /> : <><PanelLeftClose className="size-5" />Collapse</>}
-            </button>}
+            {collapsed && <button onClick={logout} title="Sign out" aria-label="Sign out" className="w-full flex justify-center p-2 rounded-lg text-slate-400 hover:bg-white/10 hover:text-white"><LogOut className="size-5" /></button>}
           </div>
       </>
     );
@@ -247,16 +249,16 @@ function Shell({ user, onLogout }: { user: User; onLogout: () => void }) {
     <AuthCtx.Provider value={{ user, logout, can }}>
       <div className="h-full flex flex-col md:flex-row">
         {/* phone top bar */}
-        <header className="md:hidden shrink-0 flex items-center gap-3 h-14 px-3 bg-white border-b border-slate-200 print:hidden">
-          <button onClick={() => setDrawer(true)} aria-label="Open menu" className="size-10 -ml-1 rounded-lg flex items-center justify-center hover:bg-slate-100"><Menu className="size-6" /></button>
+        <header className="md:hidden shrink-0 flex items-center gap-3 side h-14 px-3 bg-side text-white border-b border-white/10 print:hidden">
+          <button onClick={() => setDrawer(true)} aria-label="Open menu" className="size-10 -ml-1 rounded-lg flex items-center justify-center hover:bg-white/10"><Menu className="size-6" /></button>
           <span className="font-bold tracking-tight truncate flex-1">{brandOr(biz)}</span>
-          {showShift && <NavLink to="/shift" className="flex items-center gap-2 text-sm font-semibold rounded-lg border border-slate-200 px-3 py-1.5">
+          {showShift && <NavLink to="/shift" className="flex items-center gap-2 text-sm font-semibold rounded-lg border border-white/25 px-3 py-1.5">
             <span className={`size-2.5 rounded-full ${status.shiftOpenedAt ? "bg-green-600" : "bg-amber-500"}`} />{status.shiftOpenedAt ? "Shift open" : "No shift"}
           </NavLink>}
         </header>
 
         {/* desktop / tablet sidebar */}
-        <aside className={`${collapsed ? "w-[4.75rem]" : "w-64"} hidden md:flex shrink-0 bg-white border-r border-slate-200 flex-col transition-[width] duration-200 print:hidden`}>
+        <aside className={`${collapsed ? "w-[4.75rem]" : "w-64"} side hidden md:flex shrink-0 bg-side border-r border-white/10 flex-col transition-[width] duration-200 print:hidden`}>
           {renderSidebar(collapsed)}
         </aside>
 
@@ -266,7 +268,7 @@ function Shell({ user, onLogout }: { user: User; onLogout: () => void }) {
           aria-hidden={!drawer}
           onClick={(e) => { if ((e.target as HTMLElement).closest("a")) setDrawer(false); }}
         >
-          <div className={`w-72 max-w-[85vw] bg-white flex flex-col shadow-pop transition-transform duration-200 ease-out ${drawer ? "translate-x-0" : "-translate-x-full"}`}>{renderSidebar(false, true)}</div>
+          <div className={`side w-72 max-w-[85vw] bg-side flex flex-col shadow-pop transition-transform duration-200 ease-out ${drawer ? "translate-x-0" : "-translate-x-full"}`}>{renderSidebar(false, true)}</div>
           <button
             className={`flex-1 bg-slate-900/50 transition-opacity duration-200 ${drawer ? "opacity-100" : "opacity-0"}`}
             onClick={() => setDrawer(false)} aria-label="Close menu" tabIndex={drawer ? 0 : -1}

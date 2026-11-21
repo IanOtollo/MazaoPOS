@@ -73,7 +73,7 @@ export default function Products() {
       <div className="inline-flex rounded-lg border border-slate-300 bg-white p-0.5 mb-4" role="tablist">
         {tabs.map(([id, label]) => (
           <button key={id} role="tab" aria-selected={tab === id} onClick={() => setTab(id)}
-            className={`px-3.5 py-1.5 rounded-md text-sm font-semibold transition-colors ${tab === id ? "bg-slate-900 text-white" : "text-slate-600 hover:bg-slate-100"}`}>{label}</button>
+            className={`px-3.5 py-1.5 rounded-md text-sm font-semibold transition-colors ${tab === id ? "bg-accent text-white" : "text-slate-600 hover:bg-slate-100"}`}>{label}</button>
         ))}
       </div>
 

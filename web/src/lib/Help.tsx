@@ -40,7 +40,7 @@ function HelpPanel({ onClose }: { onClose: () => void }) {
         <div className="inline-flex rounded-lg border border-slate-300 bg-white p-0.5 mb-4" role="tablist">
           {tabs.map(([id, label]) => (
             <button key={id} role="tab" aria-selected={tab === id} onClick={() => setTab(id)}
-              className={`px-3.5 py-1.5 rounded-md text-sm font-semibold transition-colors ${tab === id ? "bg-slate-900 text-white" : "text-slate-600 hover:bg-slate-100"}`}>{label}</button>
+              className={`px-3.5 py-1.5 rounded-md text-sm font-semibold transition-colors ${tab === id ? "bg-accent text-white" : "text-slate-600 hover:bg-slate-100"}`}>{label}</button>
           ))}
         </div>
       )}
@@ -74,14 +74,14 @@ function GuideMe({ can, onClose }: { can: (p: string) => boolean; onClose: () =>
 
         <div className="flex items-center gap-1.5 mb-1" role="progressbar" aria-valuemin={1} aria-valuemax={guide.steps.length} aria-valuenow={step + 1} aria-label={`Step ${step + 1} of ${guide.steps.length}`}>
           {guide.steps.map((_, i) => (
-            <button key={i} onClick={() => setStep(i)} aria-label={`Go to step ${i + 1}`} className={`h-1.5 flex-1 rounded-full transition-colors ${i <= step ? "bg-slate-900" : "bg-slate-200 hover:bg-slate-300"}`} />
+            <button key={i} onClick={() => setStep(i)} aria-label={`Go to step ${i + 1}`} className={`h-1.5 flex-1 rounded-full transition-colors ${i <= step ? "bg-accent" : "bg-slate-200 hover:bg-slate-300"}`} />
           ))}
         </div>
         <p className="text-sm text-slate-500 mb-3">Step {step + 1} of {guide.steps.length}</p>
 
         <div className="rounded-xl border border-slate-200 bg-slate-50 p-5 min-h-28" aria-live="polite">
           <div className="flex gap-3">
-            <span className="size-8 shrink-0 rounded-full bg-slate-900 text-white font-bold flex items-center justify-center">{step + 1}</span>
+            <span className="size-8 shrink-0 rounded-full bg-accent text-white font-bold flex items-center justify-center">{step + 1}</span>
             <p className="text-lg leading-snug pt-0.5">{s.text}</p>
           </div>
           {s.tip && <p className="mt-3 ml-11 flex gap-2 text-sm text-slate-600"><Lightbulb className="size-4 shrink-0 mt-0.5 text-amber-600" aria-hidden /><span>{s.tip}</span></p>}
@@ -149,7 +149,7 @@ function Accessibility() {
         <div className="grid grid-cols-3 gap-2" role="radiogroup" aria-labelledby="a11y-size">
           {SIZES.map(([id, label, cls]) => (
             <button key={id} role="radio" aria-checked={a.text === id} onClick={() => setA11y({ text: id })}
-              className={`rounded-lg border p-3 text-center transition-colors ${a.text === id ? "border-slate-900 bg-slate-900 text-white" : "border-slate-300 bg-white hover:bg-slate-50"}`}>
+              className={`rounded-lg border p-3 text-center transition-colors ${a.text === id ? "border-accent bg-accent text-white" : "border-slate-300 bg-white hover:bg-slate-50"}`}>
               <span className={`block font-bold ${cls}`}>Aa</span>
               <span className="block text-sm">{label}</span>
             </button>
@@ -188,7 +188,7 @@ function Switch({ label, hint, on, set }: { label: string; hint: string; on: boo
         <span className="block font-semibold">{label}</span>
         <span className="block text-sm text-slate-500">{hint}</span>
       </span>
-      <span className={`relative h-6 w-11 shrink-0 rounded-full transition-colors ${on ? "bg-slate-900" : "bg-slate-300"}`} aria-hidden>
+      <span className={`relative h-6 w-11 shrink-0 rounded-full transition-colors ${on ? "bg-accent" : "bg-slate-300"}`} aria-hidden>
         <span className={`absolute top-0.5 size-5 rounded-full bg-white shadow transition-all ${on ? "left-[1.375rem]" : "left-0.5"}`} />
       </span>
     </button>

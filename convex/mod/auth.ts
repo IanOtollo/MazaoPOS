@@ -98,7 +98,7 @@ export const routes: Record<string, Handler> = {
   // ---------------- staff ----------------
   "GET /api/users": async (ctx, { token }) => {
     await requirePerm(ctx, token, "users.manage");
-    const users = await ctx.db.query("users").collect();
+    const users = (await ctx.db.query("users").collect()).filter((u) => u.deletedAt === undefined);
     const roles = new Map((await ctx.db.query("roles").collect()).map((r) => [r.id, r.name]));
     return users
       .sort((a, b) => a.name.localeCompare(b.name))
@@ -151,6 +151,26 @@ export const routes: Record<string, Handler> = {
     return { ok: true };
   },
 
+  // Deleting removes the person from the staff list, ends their sign-in and frees their PIN.
+  // Their name stays on past sales, shifts and the audit log, so the records stay honest.
+  "DELETE /api/users/:id": async (ctx, { token, params }) => {
+    const actor = await requirePerm(ctx, token, "users.manage");
+    const id = Number(params.id);
+    const target = await ctx.db.query("users").withIndex("by_numId", (q) => q.eq("id", id)).unique();
+    if (!target || target.deletedAt !== undefined) return fail(404, "User not found");
+    if (id === actor.id) return fail(400, "You cannot delete your own account");
+    if (!(await coversRole(ctx, actor, target.roleId))) return fail(403, "You cannot delete an account with more access than your own");
+    if ((await rolePerms(ctx, target.roleId)).includes("roles.manage") && (await otherRoleManagers(ctx, id)) === 0) {
+      return fail(400, "This would leave nobody able to manage roles. Assign the Admin role to someone else first.");
+    }
+    const open = await ctx.db.query("shifts").withIndex("by_user", (q) => q.eq("userId", id).eq("closedAt", undefined)).first();
+    if (open) return fail(409, `${target.name} has a shift that is still open. Close the shift first so the cash-up is not lost.`);
+    await ctx.db.patch(target._id, { active: false, deletedAt: Date.now(), pinHash: "deleted" });
+    for (const s of await ctx.db.query("sessions").withIndex("by_user", (q) => q.eq("userId", id)).collect()) await ctx.db.delete(s._id);
+    await audit(ctx, actor.id, "user_delete", { id, name: target.name });
+    return { ok: true };
+  },
+
   // ---------------- roles ----------------
   "GET /api/permissions": async (ctx, { token }) => {
     await authenticate(ctx, token);
@@ -195,7 +215,7 @@ export const routes: Record<string, Handler> = {
     const role = await ctx.db.query("roles").withIndex("by_numId", (q) => q.eq("id", id)).unique();
     if (!role) return fail(404, "Role not found");
     if (role.isSystem) return fail(400, "The Admin role cannot be removed");
-    const n = (await ctx.db.query("users").collect()).filter((u) => u.roleId === id).length;
+    const n = (await ctx.db.query("users").collect()).filter((u) => u.roleId === id && u.deletedAt === undefined).length;
     if (n > 0) return fail(409, `${n} staff member${n === 1 ? " has" : "s have"} this role. Move them to another role first.`);
     await ctx.db.delete(role._id);
     await audit(ctx, actor.id, "role_delete", { name: role.name });

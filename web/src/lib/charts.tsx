@@ -2,7 +2,6 @@ import { useMemo, useState, type ReactNode } from "react";
 
 export const kes0 = (c: number) => Math.round(c / 100).toLocaleString("en-KE");
 export const METHOD: Record<string, string> = { cash: "Cash", mpesa: "M-Pesa", card: "Card", bank: "Bank", credit: "On account" };
-const METHOD_SHADE = ["bg-slate-900", "bg-slate-600", "bg-slate-400", "bg-slate-300", "bg-slate-200"];
 
 export function Card({ title, sub, badge, action, children }: { title: string; sub?: string; badge?: number; action?: ReactNode; children: ReactNode }) {
   return (
@@ -93,21 +92,50 @@ export function BarChart({ data, fmt, small }: { data: { label: string; value: n
   );
 }
 
+// one colour per way of paying; the label and percentage are always shown too, so colour is never the only clue
+const PAY_COLOUR: Record<string, string> = { cash: "#2563eb", mpesa: "#16a34a", card: "#f59e0b", bank: "#7c3aed", credit: "#ef4444" };
+const PAY_FALLBACK = ["#0891b2", "#db2777", "#65a30d", "#64748b"];
+
 export function PaymentMix({ methods }: { methods: { method: string; amount_cents: number }[] }) {
-  const rows = methods.filter((m) => m.amount_cents > 0);
+  // Cash and M-Pesa are always listed, even at zero. Card, bank and on-account only when something was paid that way.
+  const ALWAYS = ["cash", "mpesa"];
+  const rows = [
+    ...ALWAYS.map((k) => ({ method: k, amount_cents: methods.find((m) => m.method === k)?.amount_cents ?? 0 })),
+    ...methods.filter((m) => !ALWAYS.includes(m.method) && m.amount_cents > 0),
+  ];
   const total = rows.reduce((a, m) => a + m.amount_cents, 0);
-  if (!total) return <p className="text-slate-500 py-10 text-center">No payments in this period yet.</p>;
+  const share = (n: number) => (total ? (n / total) * 100 : 0);
+  const colour = (m: string, i: number) => PAY_COLOUR[m] ?? PAY_FALLBACK[i % PAY_FALLBACK.length];
+  let acc = 0;
   return (
-    <div>
-      <div className="flex h-3 rounded-full overflow-hidden bg-slate-100 mb-4" role="img" aria-label="Payment methods">
-        {rows.map((m, i) => <div key={m.method} className={METHOD_SHADE[i % METHOD_SHADE.length]} style={{ width: `${(m.amount_cents / total) * 100}%` }} />)}
+    <div className="flex flex-col sm:flex-row items-center gap-6">
+      <div className="relative shrink-0">
+        <svg viewBox="0 0 42 42" className="size-40 -rotate-90" role="img" aria-label={`Payment methods: ${rows.map((m) => `${METHOD[m.method] ?? m.method} ${(share(m.amount_cents)).toFixed(0)} percent`).join(", ")}`}>
+          <circle cx="21" cy="21" r="15.9155" fill="none" stroke="#e2e8f0" strokeWidth="7" />
+          {rows.map((m, i) => {
+            if (m.amount_cents <= 0) return null;
+            const pct = share(m.amount_cents);
+            const seg = (
+              <circle key={m.method} cx="21" cy="21" r="15.9155" fill="none" stroke={colour(m.method, i)} strokeWidth="7"
+                strokeDasharray={`${Math.max(pct - (rows.length > 1 ? 0.6 : 0), 0.1)} ${100 - Math.max(pct - (rows.length > 1 ? 0.6 : 0), 0.1)}`} strokeDashoffset={-acc}>
+                <title>{`${METHOD[m.method] ?? m.method}: KES ${kes0(m.amount_cents)} (${pct.toFixed(0)}%)`}</title>
+              </circle>
+            );
+            acc += pct;
+            return seg;
+          })}
+        </svg>
+        <div className="absolute inset-0 flex flex-col items-center justify-center text-center pointer-events-none">
+          <span className="text-xs text-slate-500">{total ? "Total" : "No payments yet"}</span>
+          <span className="font-bold text-sm leading-tight">KES {kes0(total)}</span>
+        </div>
       </div>
-      <ul className="space-y-2.5">
+      <ul className="flex-1 w-full space-y-2.5">
         {rows.map((m, i) => (
           <li key={m.method} className="flex items-center gap-3">
-            <span className={`size-3 rounded-sm ${METHOD_SHADE[i % METHOD_SHADE.length]}`} />
+            <span className="size-3 rounded-full shrink-0" style={{ background: colour(m.method, i) }} aria-hidden />
             <span className="flex-1 font-medium">{METHOD[m.method] ?? m.method}</span>
-            <span className="text-slate-500 text-sm w-12 text-right">{((m.amount_cents / total) * 100).toFixed(0)}%</span>
+            <span className="text-slate-500 text-sm w-12 text-right">{(share(m.amount_cents)).toFixed(0)}%</span>
             <span className="num font-semibold w-28">KES {kes0(m.amount_cents)}</span>
           </li>
         ))}

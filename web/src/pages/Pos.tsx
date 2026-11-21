@@ -150,7 +150,7 @@ export default function Pos() {
           <div className="mt-2 flex gap-2 overflow-x-auto pb-1">
             {[{ id: null, name: "All items" }, ...cats].map((c) => (
               <button key={c.id ?? "all"} onClick={() => setCat(c.id)}
-                className={`shrink-0 rounded-full px-4 py-2 text-sm font-semibold border ${cat === c.id ? "bg-slate-900 text-white border-slate-900" : "bg-white border-slate-300 text-slate-700 hover:bg-slate-50"}`}>
+                className={`shrink-0 rounded-full px-4 py-2 text-sm font-semibold border ${cat === c.id ? "bg-accent text-white border-accent" : "bg-white border-slate-300 text-slate-700 hover:bg-slate-50"}`}>
                 {c.name}
               </button>
             ))}
@@ -169,7 +169,7 @@ export default function Pos() {
                   <span className="font-semibold leading-snug text-slate-900 pr-7">{p.name}</span>
                   {p.category && <span className="text-xs text-slate-500 mt-0.5">{p.category}</span>}
                   <span className="mt-auto pt-2 flex items-end justify-between gap-2">
-                    <span className="text-lg font-bold text-slate-900 num !text-left">{fmtKES(priceFor(p, tier))}</span>
+                    <span className="text-lg font-bold text-accent-dark num !text-left">{fmtKES(priceFor(p, tier))}</span>
                     <span className={`text-xs font-semibold rounded-full px-2 py-0.5 ${out ? "bg-red-50 text-danger" : p.stock_shop <= p.reorder_level_milli ? "bg-amber-50 text-amber-700" : "bg-slate-100 text-slate-600"}`}>{out ? "Out of stock" : `${fmtQty(p.stock_shop)} ${p.unit}`}</span>
                   </span>
                 </button>
@@ -204,7 +204,7 @@ export default function Pos() {
                       <div className="flex flex-wrap gap-1 mt-1.5">
                         {[{ id: 0, name: l.product.unit, factor_milli: 1000, price_cents: null, barcode: null } as Unit, ...l.product.units].map((u) => (
                           <button key={u.id} onClick={() => setCart((c) => c.map((x, k) => (k === i ? { ...x, unit: u.id === 0 ? null : u, qty: u.id === 0 ? x.qty : Math.max(1, Math.round(x.qty)) } : x)))}
-                            className={`rounded-full px-2.5 py-0.5 text-xs font-semibold border ${(l.unit?.id ?? 0) === u.id ? "bg-slate-900 text-white border-slate-900" : "bg-white border-slate-300 text-slate-600 hover:bg-slate-50"}`}>{u.name}</button>
+                            className={`rounded-full px-2.5 py-0.5 text-xs font-semibold border ${(l.unit?.id ?? 0) === u.id ? "bg-accent text-white border-accent" : "bg-white border-slate-300 text-slate-600 hover:bg-slate-50"}`}>{u.name}</button>
                         ))}
                       </div>
                     )}
@@ -243,7 +243,7 @@ export default function Pos() {
           </div>
           <div className="flex justify-between text-sm text-gray-600"><span>VAT included</span><span className="num">{fmtKES(Math.max(0, vat - (subtotal ? Math.round((vat * discount) / subtotal) : 0)))}</span></div>
           <div className="flex justify-between items-baseline pt-2"><span className="text-lg font-semibold">Total</span><span className="num text-3xl sm:text-4xl font-bold">KES {fmtKES(total)}</span></div>
-          <Button variant="primary" className="w-full !py-5 !text-xl !rounded-lg mt-3" disabled={!cart.length || invalid} onClick={() => setModal("pay")}>
+          <Button variant="primary" className="w-full !py-5 !text-xl !rounded-lg mt-3 !bg-emerald-600 !border-emerald-600 hover:!bg-emerald-700" disabled={!cart.length || invalid} onClick={() => setModal("pay")}>
             <span className="flex items-center justify-center gap-3"><Banknote className="size-6" />Charge  KES {fmtKES(total)}<span className="opacity-70 text-sm font-normal">F9</span></span>
           </Button>
           {invalid && <ErrorLine msg="Fix quantities (whole numbers only for items sold by the piece)" />}
@@ -252,7 +252,7 @@ export default function Pos() {
 
       {cart.length > 0 && !cartOpen && (
         <div className="lg:hidden fixed inset-x-0 bottom-0 z-30 bg-white border-t border-slate-200 shadow-pop p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
-          <button onClick={() => setCartOpen(true)} className="w-full h-14 rounded-lg bg-slate-900 text-white font-semibold flex items-center justify-between px-4 active:bg-slate-700">
+          <button onClick={() => setCartOpen(true)} className="w-full h-14 rounded-lg bg-accent text-white font-semibold flex items-center justify-between px-4 active:bg-slate-700">
             <span className="flex items-center gap-2"><ShoppingCart className="size-5" />{cart.length} {cart.length === 1 ? "item" : "items"}</span>
             <span className="num">KES {fmtKES(total)}</span>
           </button>

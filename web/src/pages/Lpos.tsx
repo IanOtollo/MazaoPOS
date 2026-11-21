@@ -50,7 +50,7 @@ export function OrdersTab({ suppliers, onNew }: { suppliers: SupplierOpt[]; onNe
         <div className="inline-flex rounded-lg border border-slate-300 bg-white p-0.5" role="tablist" aria-label="Filter orders">
           {FILTERS.map(([id, label]) => (
             <button key={id} role="tab" aria-selected={filter === id} onClick={() => setFilter(id)}
-              className={`px-3 py-1 rounded-md text-sm font-semibold transition-colors ${filter === id ? "bg-slate-900 text-white" : "text-slate-600 hover:bg-slate-100"}`}>{label}</button>
+              className={`px-3 py-1 rounded-md text-sm font-semibold transition-colors ${filter === id ? "bg-accent text-white" : "text-slate-600 hover:bg-slate-100"}`}>{label}</button>
           ))}
         </div>
         <p className="text-sm text-slate-500 hidden sm:block">Orders you send to suppliers before the goods arrive.</p>

@@ -186,6 +186,32 @@ try {
   assert.equal((await api("PATCH", "/api/users/1", { pin: "9999" }, mgrTok)).status, 403, "cannot reset a more powerful user's PIN");
   assert.equal((await api("POST", "/api/users", { name: "Boss2", pin: "1357", roleId: roleId("Admin") }, mgrTok)).status, 403, "cannot assign a role above your own");
 
+  // =================== deleting staff ===================
+  {
+    const me = (await api("GET", "/api/me")).body.id as number;
+    const temp = await api("POST", "/api/users", { name: "Temp Hand", pin: "8642", roleId: roleId("Cashier") });
+    assert.equal(temp.status, 200, JSON.stringify(temp.body));
+    const tempTok = (await api("POST", "/api/auth/login", { pin: "8642" }, "")).body.token as string;
+    assert.equal((await api("GET", "/api/me", undefined, tempTok)).status, 200, "the new person is signed in");
+    assert.equal((await api("DELETE", `/api/users/${temp.body.id}`, undefined, cashierTok)).status, 403, "a cashier cannot delete staff");
+    assert.equal((await api("DELETE", `/api/users/${me}`)).status, 400, "you cannot delete yourself");
+    assert.equal((await api("DELETE", "/api/users/999999")).status, 404, "unknown person");
+    assert.equal((await api("DELETE", `/api/users/${temp.body.id}`)).status, 200, "the admin can delete them");
+    assert.equal((await api("GET", "/api/me", undefined, tempTok)).status, 401, "their session ends at once");
+    assert.equal((await api("POST", "/api/auth/login", { pin: "8642" }, "")).status, 401, "their PIN no longer signs in");
+    const staff = (await api("GET", "/api/users")).body as { id: number }[];
+    assert.ok(!staff.some((u) => u.id === temp.body.id), "they are gone from the staff list");
+    assert.equal((await api("DELETE", `/api/users/${temp.body.id}`)).status, 404, "deleting twice is a plain not-found");
+    const again = await api("POST", "/api/users", { name: "Someone New", pin: "8642", roleId: roleId("Cashier") });
+    assert.equal(again.status, 200, "the freed PIN can be given to someone else");
+    // a role is no longer held up by people who were deleted
+    const tmpRole = await api("POST", "/api/roles", { name: "Temp role", description: "", permissions: ["sales.view_all"] });
+    const holder = await api("POST", "/api/users", { name: "Holder", pin: "1357", roleId: tmpRole.body.id });
+    assert.equal((await api("DELETE", `/api/roles/${tmpRole.body.id}`)).status, 409, "a role in use cannot be deleted");
+    assert.equal((await api("DELETE", `/api/users/${holder.body.id}`)).status, 200);
+    assert.equal((await api("DELETE", `/api/roles/${tmpRole.body.id}`)).status, 200, "once its only holder is deleted the role can go");
+  }
+
   // =================== product import ===================
   const rowsIn = [
     { name: "Hammer 16oz", sku: "HAM-16", category: "Tools", unit: "pc", vat: "16", cost: "380", retail: "600", shopStock: "10", storeStock: "5" },

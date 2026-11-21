@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState, type ReactNode } from "react";
+import { Ban, CircleCheck, ClipboardCheck, ArrowLeftRight, PackagePlus, Pencil } from "lucide-react";
 import { Link, useParams } from "react-router-dom";
 import { fmtKES, fmtQty, VAT_LABEL } from "../../../shared/money";
 import { ApiError, fmtTime, get, patch, useAuth, type Product } from "../lib/api";
@@ -8,6 +9,9 @@ import { useLive } from "../lib/live";
 import { fmtDay } from "../lib/range";
 import { ProductForm, StockForm } from "./inventory/forms";
 import { SignedQty, StatusBadge, kes, moveLabel, type StockStatus } from "./inventory/shared";
+
+/** Shared look of the action buttons: a small icon before the label. */
+const ACT = "inline-flex items-center gap-2";
 
 interface Detail {
   product: Product;
@@ -81,11 +85,11 @@ export default function ProductDetail() {
           <p className="text-slate-500 mt-0.5">{[p.sku, p.barcode, p.category].filter(Boolean).join(" · ")}</p>
         </div>
         <div className="flex flex-wrap gap-2">
-          {canStock && <Button onClick={() => setStock("receive")}>Receive stock</Button>}
-          {canStock && <Button onClick={() => setStock("count")}>Count stock</Button>}
-          {canStock && <Button onClick={() => setStock("transfer")}>Move stock</Button>}
-          {canManage && <Button variant="primary" onClick={() => setEdit(true)}>Edit product</Button>}
-          {canManage && (p.active ? <Button onClick={() => setActive(false)}>Deactivate</Button> : <Button onClick={() => setActive(true)}>Activate</Button>)}
+          {canStock && <Button onClick={() => setStock("receive")} className={ACT}><PackagePlus className="size-4" aria-hidden />Receive stock</Button>}
+          {canStock && <Button onClick={() => setStock("count")} className={ACT}><ClipboardCheck className="size-4" aria-hidden />Count stock</Button>}
+          {canStock && <Button onClick={() => setStock("transfer")} className={ACT}><ArrowLeftRight className="size-4" aria-hidden />Move stock</Button>}
+          {canManage && <Button variant="primary" onClick={() => setEdit(true)} className={ACT}><Pencil className="size-4" aria-hidden />Edit product</Button>}
+          {canManage && (p.active ? <Button onClick={() => setActive(false)} className={ACT}><Ban className="size-4" aria-hidden />Deactivate</Button> : <Button onClick={() => setActive(true)} className={ACT}><CircleCheck className="size-4" aria-hidden />Activate</Button>)}
         </div>
       </div>
 
