@@ -27,6 +27,7 @@ export function Movements({ initialProductId }: { initialProductId: number | nul
   const [product, setProduct] = useState<{ id: number; name: string } | null>(null);
   const [pq, setPq] = useState("");
   const [found, setFound] = useState<Found[]>([]);
+  const [foundTotal, setFoundTotal] = useState(0);
   const [locs, setLocs] = useState<{ id: number; name: string }[]>([]);
   const [loc, setLoc] = useState("");
   const [type, setType] = useState("");
@@ -46,7 +47,7 @@ export function Movements({ initialProductId }: { initialProductId: number | nul
   }, [initialProductId]);
   useEffect(() => {
     if (!pq.trim()) { setFound([]); return; }
-    const t = setTimeout(() => get<{ items: Found[] }>(`/api/products/page?q=${encodeURIComponent(pq)}&limit=8&all=1`).then((r) => setFound(r.items)).catch(() => {}), 150);
+    const t = setTimeout(() => get<{ items: Found[]; total: number }>(`/api/products/page?q=${encodeURIComponent(pq)}&limit=8&all=1`).then((r) => { setFound(r.items); setFoundTotal(r.total); }).catch(() => {}), 150);
     return () => clearTimeout(t);
   }, [pq]);
 
@@ -91,7 +92,8 @@ export function Movements({ initialProductId }: { initialProductId: number | nul
                       </button>
                     </li>
                   ))}
-                </ul>
+                {foundTotal > found.length && <li className="px-3 py-2 text-xs text-slate-500 border-t border-slate-100">Showing {found.length} of {foundTotal.toLocaleString("en-KE")} matches. Type more to narrow the list.</li>}
+          </ul>
               )}
             </>
           )}

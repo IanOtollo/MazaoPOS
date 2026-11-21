@@ -107,12 +107,13 @@ export function OrderForm({ suppliers, order, prefill, onClose, onSaved }: {
   );
   const [q, setQ] = useState("");
   const [found, setFound] = useState<Product[]>([]);
+  const [foundTotal, setFoundTotal] = useState(0);
   const [err, setErr] = useState("");
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
     if (!q.trim()) return setFound([]);
-    const t = setTimeout(() => get<{ items: Product[] }>(`/api/products/page?q=${encodeURIComponent(q)}&limit=8`).then((r) => setFound(r.items)), 150);
+    const t = setTimeout(() => get<{ items: Product[]; total: number }>(`/api/products/page?q=${encodeURIComponent(q)}&limit=8`).then((r) => { setFound(r.items); setFoundTotal(r.total); }), 150);
     return () => clearTimeout(t);
   }, [q]);
 
@@ -159,6 +160,7 @@ export function OrderForm({ suppliers, order, prefill, onClose, onSaved }: {
         {found.length > 0 && (
           <ul className="absolute z-10 left-0 right-0 mt-1 bg-white border border-line rounded-lg shadow-pop max-h-60 overflow-auto">
             {found.map((p) => <li key={p.id}><button onClick={() => add(p)} className="w-full text-left px-3 py-2 hover:bg-slate-50 flex justify-between gap-3"><span>{p.name}</span><span className="text-slate-500 text-sm">{p.sku}</span></button></li>)}
+          {foundTotal > found.length && <li className="px-3 py-2 text-xs text-slate-500 border-t border-slate-100">Showing {found.length} of {foundTotal.toLocaleString("en-KE")} matches. Type more to narrow the list.</li>}
           </ul>
         )}
       </div>
