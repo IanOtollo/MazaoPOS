@@ -18,6 +18,7 @@ const method = v.union(v.literal("cash"), v.literal("mpesa"), v.literal("card"),
 
 export default defineSchema({
   counters: defineTable({ name: v.string(), value: v.number() }).index("by_name", ["name"]),
+  topics: defineTable({ name: v.string(), version: v.number() }).index("by_name", ["name"]),
   settings: defineTable({ key: v.string(), value: v.string() }).index("by_key", ["key"]),
 
   // ---- people and access

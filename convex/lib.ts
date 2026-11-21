@@ -1,5 +1,6 @@
 import { ConvexError } from "convex/values";
 import type { MutationCtx } from "./_generated/server";
+import type { Doc } from "./_generated/dataModel";
 import { ALL_PERMISSIONS, DEFAULT_ROLES, type Permission } from "../shared/permissions";
 
 /** An error the screens understand: a status code and a plain-words message. */
@@ -134,3 +135,83 @@ export async function seed(ctx: MutationCtx) {
 }
 
 export { ALL_PERMISSIONS };
+
+// ---------- shared types for route modules ----------
+export type Ctx = MutationCtx;
+/** One request: bearer token, caller address, :params from the path, ?query values, and the parsed JSON body (null if none). */
+export type Req = { token?: string; ip: string; params: Record<string, string>; query: Record<string, string>; body: any };
+/** A route handler returns the JSON to send. Throw with fail(status, message) for errors. */
+export type Handler = (ctx: Ctx, req: Req) => Promise<unknown>;
+
+// ---------- live updates ----------
+/** Tell every open screen that this kind of data changed (screens poll the topic counters). */
+export async function bump(ctx: MutationCtx, names: string[]) {
+  for (const name of names) {
+    const r = await ctx.db.query("topics").withIndex("by_name", (q) => q.eq("name", name)).unique();
+    if (r) await ctx.db.patch(r._id, { version: r.version + 1 });
+    else await ctx.db.insert("topics", { name, version: 1 });
+  }
+}
+
+// ---------- stock ----------
+export async function stockOnHand(ctx: MutationCtx, productId: number, locationId: number): Promise<number> {
+  const r = await ctx.db.query("stock").withIndex("by_product_location", (q) => q.eq("productId", productId).eq("locationId", locationId)).unique();
+  return r?.qtyMilli ?? 0;
+}
+
+/**
+ * The only way stock changes: writes an append-only movement AND moves the running balance in one step.
+ * qtyMilli is signed (sales negative, deliveries positive). Returns the new quantity on hand.
+ */
+export async function moveStock(
+  ctx: MutationCtx,
+  m: { productId: number; locationId: number; qtyMilli: number; type: string; refType?: string; refId?: number; unitCostCents?: number; note?: string; userId?: number },
+): Promise<number> {
+  await ctx.db.insert("stockMovements", { id: await nextId(ctx, "stockMovements"), ...m, createdAt: Date.now() });
+  const row = await ctx.db.query("stock").withIndex("by_product_location", (q) => q.eq("productId", m.productId).eq("locationId", m.locationId)).unique();
+  if (row) {
+    await ctx.db.patch(row._id, { qtyMilli: row.qtyMilli + m.qtyMilli });
+    return row.qtyMilli + m.qtyMilli;
+  }
+  await ctx.db.insert("stock", { productId: m.productId, locationId: m.locationId, qtyMilli: m.qtyMilli });
+  return m.qtyMilli;
+}
+
+// ---------- customer and supplier accounts ----------
+/** Customer ledger: positive = customer owes more (credit sale), negative = they paid or returned goods. Keeps customers.balanceCents in step. */
+export async function postCustomer(
+  ctx: MutationCtx,
+  e: { customerId: number; amountCents: number; type: string; refType?: string; refId?: number; method?: string; note?: string; userId?: number },
+): Promise<number> {
+  await ctx.db.insert("customerLedger", { id: await nextId(ctx, "customerLedger"), ...e, createdAt: Date.now() });
+  const c = await ctx.db.query("customers").withIndex("by_numId", (q) => q.eq("id", e.customerId)).unique();
+  if (!c) return fail(404, "Customer not found");
+  await ctx.db.patch(c._id, { balanceCents: c.balanceCents + e.amountCents });
+  return c.balanceCents + e.amountCents;
+}
+
+/** Supplier ledger: positive = we owe more (goods received), negative = we paid or got a credit note. Keeps suppliers.balanceCents in step. */
+export async function postSupplier(
+  ctx: MutationCtx,
+  e: { supplierId: number; amountCents: number; type: string; refId?: number; method?: string; note?: string; userId?: number },
+): Promise<number> {
+  await ctx.db.insert("supplierLedger", { id: await nextId(ctx, "supplierLedger"), ...e, createdAt: Date.now() });
+  const s = await ctx.db.query("suppliers").withIndex("by_numId", (q) => q.eq("id", e.supplierId)).unique();
+  if (!s) return fail(404, "Supplier not found");
+  await ctx.db.patch(s._id, { balanceCents: s.balanceCents + e.amountCents });
+  return s.balanceCents + e.amountCents;
+}
+
+export type { Doc };
+
+// ---------- dates (Kenya is UTC+3, no daylight saving; times are stored as milliseconds) ----------
+/** Start (inclusive) and end (exclusive) of a local Kenya day, in ms. date is YYYY-MM-DD. Rejects impossible dates. */
+export function eatDayRangeMs(date: string): { from: number; to: number } {
+  const utc = new Date(`${date}T00:00:00Z`);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || Number.isNaN(utc.getTime()) || utc.toISOString().slice(0, 10) !== date) return fail(400, "That is not a valid date");
+  const from = new Date(`${date}T00:00:00+03:00`).getTime();
+  return { from, to: from + 24 * 3600 * 1000 };
+}
+export const todayEAT = () => new Date(Date.now() + 3 * 3600 * 1000).toISOString().slice(0, 10);
+/** The Kenya calendar day (YYYY-MM-DD) a time in ms falls on. */
+export const eatDayOf = (ms: number) => new Date(ms + 3 * 3600 * 1000).toISOString().slice(0, 10);
