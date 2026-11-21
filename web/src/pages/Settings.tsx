@@ -3,7 +3,7 @@ import { useSearchParams } from "react-router-dom";
 import { Download, Lock, Plus, Trash2 } from "lucide-react";
 import { ADMIN_EXCLUDED, PERMISSIONS, PERMISSION_GROUPS, type Permission } from "../../../shared/permissions";
 import { api, apiUrl, get, getToken, patch, post, put, useAuth } from "../lib/api";
-import { Button, ErrorLine, Field, Input, Modal, PageHead, inputCls, td, th, Select } from "../lib/ui";
+import { Button, ErrorLine, Field, Input, Modal, PageHead, inputCls, td, th, Select, PinInput } from "../lib/ui";
 import { useConfirm, useToast } from "../lib/toast";
 import { setBrand, setLogo, useLogoUrl } from "../lib/brand";
 import { useLive } from "../lib/live";
@@ -196,7 +196,7 @@ function StaffForm({ row, roles, selfId, onClose, onSaved }: { row: StaffRow | n
           </Select>
         </Field>
         <Field label={row ? "New PIN (leave blank to keep the current one)" : "PIN (4 to 8 digits)"} hint="Every person needs their own PIN, so it also identifies who made each sale.">
-          <Input type="password" inputMode="numeric" autoComplete="new-password" value={pin} onChange={(e) => setPin(e.target.value)} />
+          <PinInput autoComplete="new-password" value={pin} onChange={(e) => setPin(e.target.value)} />
         </Field>
         {row && !self && <label className="flex items-center gap-2"><input type="checkbox" checked={active} onChange={(e) => setActive(e.target.checked)} /> Active (can sign in)</label>}
         <ErrorLine msg={err} />

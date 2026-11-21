@@ -26,6 +26,17 @@ export function Input(p: ComponentProps<"input">) {
   return <input {...p} className={`${inputCls} ${p.className ?? ""}`} />;
 }
 
+/** A short, centred box for a 4 to 8 digit PIN. Digits only, hidden as typed. */
+export function PinInput({ onChange, className = "", ...p }: Omit<ComponentProps<"input">, "type" | "inputMode" | "maxLength">) {
+  return (
+    <input
+      {...p} type="password" inputMode="numeric" autoComplete={p.autoComplete ?? "off"} maxLength={8}
+      onChange={(e) => { e.target.value = e.target.value.replace(/\D/g, "").slice(0, 8); onChange?.(e); }}
+      className={`${inputCls} !w-36 text-center text-lg tracking-[0.35em] tabular-nums ${className}`}
+    />
+  );
+}
+
 /** Decimal input that keeps the typed text and reports a number (or null). */
 export function NumInput({ value, onChange, ...p }: { value: number | null; onChange: (n: number | null) => void } & Omit<InputHTMLAttributes<HTMLInputElement>, "value" | "onChange">) {
   const [text, setText] = useState(value == null ? "" : String(value));

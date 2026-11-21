@@ -2,7 +2,7 @@ import { useState } from "react";
 import { Banknote, BookUser, CreditCard, Landmark, Plus, Smartphone, X, type LucideIcon } from "lucide-react";
 import { fmtKES, toCents } from "../../../shared/money";
 import { post, useAuth, type Customer } from "../lib/api";
-import { Button, ErrorLine, Field, Input, Modal, NumInput, Select } from "../lib/ui";
+import { Button, ErrorLine, Field, Input, Modal, NumInput, Select, PinInput } from "../lib/ui";
 import type { SaleDoc } from "../lib/Receipt";
 
 type Method = "cash" | "mpesa" | "card" | "bank" | "credit";
@@ -136,7 +136,7 @@ export function PayModal({ total, customer, items, discount, approvalPin, onClos
 
       {needsApproval && (
         <div className="mt-3 border border-amber-200 bg-amber-50 rounded-lg p-3">
-          <Field label="Manager PIN to approve credit" hint="Goods on account are only given with a manager's approval."><Input type="password" inputMode="numeric" autoComplete="off" value={pin} onChange={(e) => setPin(e.target.value)} /></Field>
+          <Field label="Manager PIN to approve credit" hint="Goods on account are only given with a manager's approval."><PinInput autoComplete="off" value={pin} onChange={(e) => setPin(e.target.value)} /></Field>
         </div>
       )}
       <div className="mt-3"><ErrorLine msg={err} /></div>

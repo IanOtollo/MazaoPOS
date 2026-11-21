@@ -2,7 +2,7 @@ import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } f
 import { ArrowLeft, Banknote, Minus, Percent, Plus, ScanBarcode, Search, ShoppingCart, Trash2, UserRound, X } from "lucide-react";
 import { fmtKES, fmtQty, lineTotal, toCents, vatOfGross } from "../../../shared/money";
 import { fetchAllProducts, get, post, priceFor, useAuth, type Customer, type Product, type Unit } from "../lib/api";
-import { Button, ErrorLine, Field, Input, Modal, NumInput, td, th } from "../lib/ui";
+import { Button, ErrorLine, Field, Input, Modal, NumInput, td, th, PinInput } from "../lib/ui";
 import { Receipt, type SaleDoc } from "../lib/Receipt";
 import { PayModal } from "./PayModal";
 import { OpenShift } from "./OpenShift";
@@ -321,7 +321,7 @@ function DiscountModal({ subtotal, isManager, onClose, onApply }: { subtotal: nu
   return (
     <Modal title="Discount" onClose={onClose}>
       <Field label="Discount amount (KES, off the total)"><NumInput value={amt} onChange={setAmt} autoFocus /></Field>
-      {!isManager && <div className="mt-3"><Field label="Manager PIN" hint="A manager must approve every discount."><Input type="password" inputMode="numeric" value={pin} onChange={(e) => setPin(e.target.value)} /></Field></div>}
+      {!isManager && <div className="mt-3"><Field label="Manager PIN" hint="A manager must approve every discount."><PinInput value={pin} onChange={(e) => setPin(e.target.value)} /></Field></div>}
       <div className="mt-3"><ErrorLine msg={err} /></div>
       <div className="flex gap-2 mt-3">
         <Button onClick={() => onApply(0, "")}>Remove discount</Button>
