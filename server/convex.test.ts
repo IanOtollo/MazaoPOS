@@ -249,6 +249,17 @@ try {
     assert.equal(sm.items, base0 + 1100, "the summary covers the whole catalogue, not one page");
   }
 
+  // =================== inventory values: selling, cost, store, dead stock ===================
+  {
+    assert.equal((await api("GET", "/api/reports/inventory-values", undefined, cashierTok)).status, 403, "cashier cannot see stock values");
+    const v = await api("GET", "/api/reports/inventory-values?days=90");
+    assert.equal(v.status, 200, JSON.stringify(v.body));
+    assert.ok(v.body.selling_value_cents >= v.body.cost_value_cents, "stock is worth at least its cost");
+    assert.ok(v.body.store_cost_value_cents > 0 && v.body.store_items >= 1, "stock in the store is valued separately");
+    assert.ok(v.body.dead_items >= 1 && v.body.dead_cost_value_cents > 0, "stock that has not sold counts as dead stock");
+    assert.ok(v.body.dead_cost_value_cents <= v.body.cost_value_cents, "dead stock is part of the stock at cost");
+  }
+
   // =================== dashboard ===================
   assert.equal((await api("GET", "/api/dashboard", undefined, cashierTok)).status, 403, "cashier cannot open the dashboard");
   const dash = await api("GET", "/api/dashboard?days=7");

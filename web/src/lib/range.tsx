@@ -24,7 +24,7 @@ const dateInput = "border border-slate-300 rounded-lg px-3 py-1.5 bg-white text-
 
 /** Period selection shared by the Dashboard and Reports screens: presets or an exact date range. */
 export function useRange() {
-  const [days, setDays] = useState(7);
+  const [days, setDays] = useState(1); // opens on Today
   const [custom, setCustom] = useState<{ from: string; to: string } | null>(null);
   const [data, setData] = useState<DashData | null>(null);
   const [err, setErr] = useState("");

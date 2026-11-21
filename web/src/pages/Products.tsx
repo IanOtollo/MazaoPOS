@@ -52,6 +52,9 @@ export default function Products() {
   const [total, setTotal] = useState(0);
   const [summary, setSummary] = useState<{ items: number; low: number; at_price_cents: number; at_cost_cents: number | null } | null>(null);
   const [loaded, setLoaded] = useState(false);
+  const [vals, setVals] = useState<{ items: number; selling_value_cents: number; cost_value_cents: number; store_cost_value_cents: number; store_items: number; dead_cost_value_cents: number; dead_items: number; dead_days: number } | null>(null);
+  useEffect(() => { if (canCost) get<NonNullable<typeof vals>>("/api/reports/inventory-values").then(setVals).catch(() => setVals(null)); }, [canCost, total]);
+  useLive(["sales", "stock", "products"], () => { if (canCost) get<NonNullable<typeof vals>>("/api/reports/inventory-values").then(setVals).catch(() => {}); });
   const lastPage = Math.max(0, Math.ceil(total / PAGE) - 1);
 
   const load = useCallback(
@@ -81,10 +84,11 @@ export default function Products() {
         const atCost = summary.at_cost_cents ?? 0;
         const atPrice = summary.at_price_cents;
         return (
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-4">
-            <Stat label="Items" value={summary.items.toLocaleString("en-KE")} />
-            <Stat label="Stock value at selling price" value={`KES ${Math.round(atPrice / 100).toLocaleString("en-KE")}`} />
-            {canCost && <Stat label="Stock value at cost" value={`KES ${Math.round(atCost / 100).toLocaleString("en-KE")}`} />}
+          <div className={`grid grid-cols-2 gap-3 mb-4 ${canCost ? "md:grid-cols-3 xl:grid-cols-5" : "md:grid-cols-3"}`}>
+            <Stat label="Stock at selling price" value={kes(vals?.selling_value_cents ?? atPrice)} sub={`${summary.items.toLocaleString("en-KE")} items`} />
+            {canCost && <Stat label="Stock at cost" value={kes(vals?.cost_value_cents ?? atCost)} sub={`${summary.items.toLocaleString("en-KE")} items`} />}
+            {canCost && vals && <Stat label="Store stock at cost" value={kes(vals.store_cost_value_cents)} sub={vals.store_items ? `${vals.store_items.toLocaleString("en-KE")} items` : "Nothing in the store"} />}
+            {canCost && vals && <Stat label={`Dead stock at cost`} value={kes(vals.dead_cost_value_cents)} sub={`${vals.dead_items.toLocaleString("en-KE")} of ${vals.items.toLocaleString("en-KE")} items, no sale in ${vals.dead_days} days`} warn={vals.dead_items > 0} />}
             <Stat label="Low on stock" value={String(low)} warn={low > 0} />
           </div>
         );
@@ -158,11 +162,14 @@ export default function Products() {
   );
 }
 
-function Stat({ label, value, warn }: { label: string; value: string; warn?: boolean }) {
+const kes = (cents: number) => `KES ${(cents / 100).toLocaleString("en-KE", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
+function Stat({ label, value, sub, warn }: { label: string; value: string; sub?: string; warn?: boolean }) {
   return (
-    <div className="bg-white border border-line rounded-xl shadow-card p-4">
+    <div className="bg-white border border-line rounded-xl shadow-card p-4 min-w-0">
       <div className="text-sm text-slate-500">{label}</div>
-      <div className={`text-2xl font-bold tracking-tight mt-1 ${warn ? "text-amber-700" : ""}`}>{value}</div>
+      <div className={`text-xl font-bold tracking-tight mt-1 truncate ${warn ? "text-amber-700" : ""}`}>{value}</div>
+      {sub && <div className="text-xs text-slate-500 mt-0.5">{sub}</div>}
     </div>
   );
 }

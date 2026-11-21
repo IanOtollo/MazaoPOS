@@ -241,6 +241,40 @@ export const routes: Record<string, Handler> = {
     return { cost_value_cents: v.cost, retail_value_cents: v.retail };
   },
 
+  // the figures an owner checks on the stock: what it is worth, what sits in the store, and what has not moved
+  "GET /api/reports/inventory-values": async (ctx, { token, query }) => {
+    await requirePerm(ctx, token, "products.view_cost");
+    const days = Math.min(Math.max(Math.floor(Number(query.days)) || 90, 1), 3650);
+    const products = (await ctx.db.query("products").collect()).filter((p) => p.active);
+    const onHand = new Map<number, { all: number; store: number }>();
+    for (const s of await ctx.db.query("stock").collect()) {
+      const e = onHand.get(s.productId) ?? { all: 0, store: 0 };
+      e.all += s.qtyMilli;
+      if (s.locationId === 2) e.store += s.qtyMilli; // location 2 is the Store
+      onHand.set(s.productId, e);
+    }
+    const since = Date.now() - days * 86400000;
+    const sold = new Set<number>();
+    for (const sale of await ctx.db.query("sales").withIndex("by_created", (q) => q.gte("createdAt", since)).collect()) {
+      if (sale.kind === "sale") for (const it of sale.items) sold.add(it.productId);
+    }
+    let selling = 0, cost = 0, storeCost = 0, storeItems = 0, deadCost = 0, deadItems = 0;
+    for (const p of products) {
+      const e = onHand.get(p.id) ?? { all: 0, store: 0 };
+      const all = Math.max(0, e.all), store = Math.max(0, e.store);
+      selling += Math.round((p.priceRetailCents * all) / 1000);
+      cost += Math.round((p.costCents * all) / 1000);
+      if (store > 0) { storeCost += Math.round((p.costCents * store) / 1000); storeItems++; }
+      if (all > 0 && !sold.has(p.id)) { deadCost += Math.round((p.costCents * all) / 1000); deadItems++; }
+    }
+    return {
+      items: products.length,
+      selling_value_cents: selling, cost_value_cents: cost,
+      store_cost_value_cents: storeCost, store_items: storeItems,
+      dead_cost_value_cents: deadCost, dead_items: deadItems, dead_days: days,
+    };
+  },
+
   "GET /api/audit": async (ctx, { token }) => {
     await requirePerm(ctx, token, "audit.view");
     const rows = await ctx.db.query("auditLog").withIndex("by_time").order("desc").take(300);
