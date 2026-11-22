@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState, type ReactNode } from "react";
 import { NavLink, Navigate, Route, Routes, useLocation } from "react-router-dom";
-import { BarChart3, ChevronDown, Database, HardDriveDownload, LayoutDashboard, Briefcase, ShieldCheck, Truck, UserCog, LogOut, Menu, Package, PanelLeftClose, PanelLeftOpen, ReceiptText, Settings as SettingsIcon, ShoppingCart, Users, Wallet, Hammer, type LucideIcon } from "lucide-react";
+import { User as UserIcon, BarChart3, ChevronDown, Database, HardDriveDownload, LayoutDashboard, Briefcase, ShieldCheck, Truck, UserCog, LogOut, Menu, Package, PanelLeftClose, PanelLeftOpen, ReceiptText, Settings as SettingsIcon, ShoppingCart, Users, Wallet, Hammer, type LucideIcon } from "lucide-react";
 import { AuthCtx, fmtTime, get, getToken, post, setToken, userCan, type User } from "./lib/api";
 import type { Permission } from "../../shared/permissions";
 import { useConfirm } from "./lib/toast";
@@ -248,7 +248,7 @@ function Shell({ user, onLogout }: { user: User; onLogout: () => void }) {
           {inDrawer && (
           <div className="border-t border-white/10 p-2 space-y-1">
             <div className={`flex items-center gap-2.5 rounded-lg px-2 py-1 ${collapsed ? "justify-center px-0" : ""}`}>
-              <span className="size-8 shrink-0 rounded-full bg-white/15 text-white text-sm font-bold flex items-center justify-center" data-tip={collapsed ? `${user.name} (${user.role})` : undefined}>{user.name[0]?.toUpperCase()}</span>
+              <span className="size-8 shrink-0 rounded-full bg-white/15 text-white text-sm font-bold flex items-center justify-center" data-tip={collapsed ? `${user.name} (${user.role})` : undefined}><UserIcon className="size-[18px]" aria-hidden /></span>
               {!collapsed && (
                 <>
                   <span className="leading-tight min-w-0 flex-1">
@@ -329,7 +329,7 @@ function Shell({ user, onLogout }: { user: User; onLogout: () => void }) {
             )}
             <HelpButton variant="icon" />
             <div className="flex items-center gap-2 pl-3 ml-1 border-l border-slate-200">
-              <span className="size-8 shrink-0 rounded-full bg-accent text-white text-sm font-bold flex items-center justify-center" aria-hidden>{user.name[0]?.toUpperCase()}</span>
+              <span className="size-8 shrink-0 rounded-full bg-accent text-white text-sm font-bold flex items-center justify-center" aria-hidden><UserIcon className="size-[18px]" aria-hidden /></span>
               <span className="leading-tight hidden lg:block">
                 <span className="block text-sm font-semibold">{user.name}</span>
                 {user.role.toLowerCase() !== user.name.toLowerCase() && <span className="block text-xs text-slate-500 capitalize">{user.role}</span>}

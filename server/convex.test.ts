@@ -210,7 +210,9 @@ try {
     assert.equal(again.status, 200, "the freed PIN can be given to someone else");
     // a role is no longer held up by people who were deleted
     const tmpRole = await api("POST", "/api/roles", { name: "Temp role", description: "", permissions: ["sales.view_all"] });
+    assert.equal(tmpRole.status, 200, "temp role created: " + JSON.stringify(tmpRole.body));
     const holder = await api("POST", "/api/users", { name: "Holder", pin: "1357", roleId: tmpRole.body.id });
+    assert.equal(holder.status, 200, "holder created: " + JSON.stringify(holder.body));
     assert.equal((await api("DELETE", `/api/roles/${tmpRole.body.id}`)).status, 409, "a role in use cannot be deleted");
     assert.equal((await api("DELETE", `/api/users/${holder.body.id}`)).status, 200);
     assert.equal((await api("DELETE", `/api/roles/${tmpRole.body.id}`)).status, 200, "once its only holder is deleted the role can go");
