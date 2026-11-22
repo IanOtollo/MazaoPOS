@@ -1,7 +1,7 @@
-import { useCallback, useEffect, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState, type RefObject } from "react";
 import { NavLink, Navigate, Route, Routes, useLocation } from "react-router-dom";
-import { BarChart3, ChevronDown, Database, HardDriveDownload, LayoutDashboard, Briefcase, ShieldCheck, Truck, UserCog, LogOut, Menu, Package, PanelLeftClose, PanelLeftOpen, ReceiptText, Settings as SettingsIcon, ShoppingCart, Users, Wallet, Hammer, type LucideIcon } from "lucide-react";
-import { AuthCtx, fmtTime, get, getToken, post, setToken, userCan, type User } from "./lib/api";
+import { BarChart3, HardDriveDownload, LayoutDashboard, Briefcase, ShieldCheck, Truck, UserCog, LogOut, Package, ReceiptText, Settings as SettingsIcon, ShoppingCart, Users, Wallet } from "lucide-react";
+import { AuthCtx, get, getToken, post, setToken, userCan, type User } from "./lib/api";
 import type { Permission } from "../../shared/permissions";
 import { useConfirm } from "./lib/toast";
 import { brandOr, setBrand, setLogo, useBrand, useLogoUrl } from "./lib/brand";
@@ -17,32 +17,45 @@ import Shift from "./pages/Shift";
 import Settings from "./pages/Settings";
 import Suppliers from "./pages/Suppliers";
 import { SiteFooter } from "./lib/Footer";
-import { SideTips } from "./lib/SideTips";
 import { HelpButton } from "./lib/Help";
 import { GlobalSearch, type SearchPage } from "./lib/GlobalSearch";
+import { BottomBar, type NavGroup, type NavPage } from "./lib/BottomBar";
 import NotFound from "./pages/NotFound";
 import ProductDetail from "./pages/ProductDetail";
 
-const COLLAPSE_KEY = "pos_sidebar_collapsed";
-const CLOSED_KEY = "pos_nav_closed";
-// first time: every section starts closed and the one you are in opens, so the menu is short; after that it remembers your choice
-const ALL_CLOSED: Record<string, boolean> = { Overview: true, Selling: true, Stock: true, People: true, Money: true, Admin: true };
-const readClosed = (): Record<string, boolean> => {
-  try { const v = localStorage.getItem(CLOSED_KEY); return { ...ALL_CLOSED, ...(v ? JSON.parse(v) : {}) }; } catch { return ALL_CLOSED; }
-};
-// which section each screen belongs to, so the right one opens when you go there
-const SECTION_OF: [string, string][] = [
-  ["/dashboard", "Overview"], ["/reports", "Overview"], ["/sales", "Selling"], ["/inventory", "Stock"], ["/suppliers", "Stock"],
-  ["/customers", "People"], ["/shift", "Money"], ["/settings", "Admin"],
-];
-const readCollapsed = () => {
-  try {
-    const v = localStorage.getItem(COLLAPSE_KEY);
-    return v === null ? window.innerWidth < 1100 : v === "1";
-  } catch { return false; }
-};
-
 interface Status { shiftOpenedAt: string | null; lowStock: number; owing: number }
+
+/**
+ * True while the bottom bar should be tucked away: the person has scrolled DOWN the page by a fair bit.
+ * It comes back the moment they scroll up, when they are near the top, or when the page is too short to scroll.
+ * `off` keeps it always showing (the till scrolls inside its own panels).
+ */
+function useScrollHide(ref: RefObject<HTMLElement | null>, off: boolean, resetKey: string) {
+  const [hidden, setHidden] = useState(false);
+  useEffect(() => {
+    const el = ref.current;
+    setHidden(false);
+    if (!el || off) return;
+    let last = el.scrollTop;
+    let anchor = last; // where the current direction of travel began
+    let dir = 0;
+    const onScroll = () => {
+      const top = el.scrollTop;
+      const scrollable = el.scrollHeight - el.clientHeight > 40;
+      if (!scrollable || top <= 80) { setHidden(false); last = top; anchor = top; dir = 0; return; }
+      const d = top - last;
+      if (d === 0) return;
+      const now = d > 0 ? 1 : -1;
+      if (now !== dir) { dir = now; anchor = last; }
+      if (now > 0 && top - anchor > 24) setHidden(true);
+      else if (now < 0 && anchor - top >= 8) setHidden(false);
+      last = top;
+    };
+    el.addEventListener("scroll", onScroll, { passive: true });
+    return () => el.removeEventListener("scroll", onScroll);
+  }, [ref, off, resetKey]);
+  return hidden;
+}
 
 export default function App() {
   const [user, setUser] = useState<User | null>(null);
@@ -69,18 +82,15 @@ function Shell({ user, onLogout }: { user: User; onLogout: () => void }) {
   const home = canSell ? "/" : canReports ? "/dashboard" : "/inventory";
   const confirm = useConfirm();
   const loc = useLocation();
-  const [collapsed, setCollapsed] = useState(readCollapsed);
-  const [drawer, setDrawer] = useState(false);
-  const [closed, setClosed] = useState<Record<string, boolean>>(readClosed);
   const biz = useBrand();
   const logo = useLogoUrl();
   const [status, setStatus] = useState<Status>({ shiftOpenedAt: null, lowStock: 0, owing: 0 });
   const showShift = canSell || !!status.shiftOpenedAt;
 
-  const toggle = () => setCollapsed((c) => {
-    try { localStorage.setItem(COLLAPSE_KEY, c ? "0" : "1"); } catch { /* storage unavailable */ }
-    return !c;
-  });
+  // the bottom bar slides away while scrolling down; the footer follows it so nothing jumps
+  const mainRef = useRef<HTMLElement>(null);
+  const scrollHidden = useScrollHide(mainRef, loc.pathname === "/", loc.pathname);
+  const [barVisible, setBarVisible] = useState(true);
 
   useEffect(() => { get<Record<string, string>>("/api/settings").then((s) => { setBrand(s.business_name); setLogo(s.logo_version); }).catch(() => {}); }, []);
   useLive(["settings"], () => { get<Record<string, string>>("/api/settings").then((s) => { setBrand(s.business_name); setLogo(s.logo_version); }).catch(() => {}); });
@@ -110,17 +120,6 @@ function Shell({ user, onLogout }: { user: User; onLogout: () => void }) {
     const t = setTimeout(() => setLost(true), 4000);
     return () => clearTimeout(t);
   }, [connected]);
-  useEffect(() => { setDrawer(false); }, [loc.pathname]);
-  const flip = (label: string) => setClosed((c) => {
-    const n = { ...c, [label]: !c[label] };
-    try { localStorage.setItem(CLOSED_KEY, JSON.stringify(n)); } catch { /* storage unavailable */ }
-    return n;
-  });
-  // going to a screen opens its section
-  useEffect(() => {
-    const sec = loc.pathname === "/" ? "Selling" : SECTION_OF.find(([p]) => loc.pathname.startsWith(p))?.[1];
-    if (sec) setClosed((c) => (c[sec] ? { ...c, [sec]: false } : c));
-  }, [loc.pathname]);
 
   const logout = async () => {
     if (status.shiftOpenedAt && !(await confirm({
@@ -133,12 +132,14 @@ function Shell({ user, onLogout }: { user: User; onLogout: () => void }) {
     onLogout();
   };
 
-  // the Settings tabs all live at /settings, told apart by ?tab=
+  // is this page the one on screen? (the Settings tabs all live at /settings, told apart by ?tab=)
+  const at = (to: string, end = false) => (end ? loc.pathname === to : loc.pathname === to || loc.pathname.startsWith(`${to}/`));
   const onSettings = (tab: string) => {
     if (loc.pathname !== "/settings") return false;
     const cur = new URLSearchParams(loc.search).get("tab") ?? "";
     return cur === tab || (tab === "" && !["staff", "roles", "backup"].includes(cur));
   };
+
   const searchPages = [
     canReports && { label: "Dashboard", to: "/dashboard", also: "overview today" },
     canReports && { label: "Reports", to: "/reports", also: "fast slow movers vat profit sales" },
@@ -155,163 +156,62 @@ function Shell({ user, onLogout }: { user: User; onLogout: () => void }) {
     can("roles.manage") && { label: "Roles and access", to: "/settings?tab=roles", also: "permissions" },
   ].filter(Boolean) as SearchPage[];
 
-  const renderSidebar = (collapsed: boolean, inDrawer = false) => {
-  const item = (to: string, label: string, Icon: LucideIcon, badge?: ReactNode, end = false, active?: boolean) => (
-    <NavLink key={to} to={to} end={end} data-tip={collapsed ? label : undefined}
-      className={({ isActive }) =>
-        `relative flex items-center gap-3 rounded-lg px-3 py-2 font-semibold text-sm transition-colors ${collapsed ? "justify-center" : ""} ${(active ?? isActive) ? "bg-accent text-white shadow-sm" : "text-slate-300 hover:bg-white/10 hover:text-white"}`}>
-      {({ isActive }) => (
-        <>
-          {(active ?? isActive) && <span className="absolute left-0 top-2 bottom-2 w-1 rounded-r-full bg-white" />}
-          <Icon className="size-5 shrink-0" />
-          {!collapsed && <span className="flex-1">{label}</span>}
-          {badge && (collapsed
-            ? <span className="absolute top-1 right-1.5 size-2.5 rounded-full bg-amber-400 ring-2 ring-side" />
-            : badge)}
-        </>
-      )}
-    </NavLink>
-  );
-
-  const pill = (n: number, tone: "amber" | "rose") =>
-    n > 0 ? <span className={`rounded-full px-2 py-0.5 text-xs font-bold ${tone === "amber" ? "bg-amber-100 text-amber-800" : "bg-rose-100 text-rose-700"}`}>{n}</span> : undefined;
-
-  const group = (label: string, children: ReactNode) => {
-    const shut = !collapsed && closed[label];
-    return (
-      <div className="mt-2 first:mt-0 pt-2 first:pt-0 border-t border-white/10 first:border-0">
-        {!collapsed ? (
-          <button onClick={() => flip(label)} aria-expanded={!shut}
-            className="w-full flex items-center justify-between rounded-lg px-3 py-2 text-[11px] font-bold uppercase tracking-wider text-slate-400 hover:bg-white/10 hover:text-white">
-            {label}
-            <ChevronDown className={`size-4 transition-transform ${shut ? "-rotate-90" : ""}`} />
-          </button>
-        ) : <div className="mx-3 mb-2 border-t border-white/15" />}
-        {!shut && <div className="space-y-0.5 mt-0.5">{children}</div>}
-      </div>
-    );
-  };
-
-    return (
-      <>
-          {/* brand */}
-          <div className={`flex items-center gap-3 px-4 h-16 border-b border-white/10 ${collapsed ? "justify-center px-0" : ""}`}>
-            {!collapsed && logo && <img src={logo} alt="" className="size-9 shrink-0 rounded-lg object-contain bg-white p-0.5" />}
-            {!collapsed && <span className="flex-1 font-bold text-white tracking-tight leading-tight truncate">{brandOr(biz)}</span>}
-            {!inDrawer && (
-              <button onClick={toggle} data-tip={collapsed ? "Expand menu" : "Collapse menu"} aria-label={collapsed ? "Expand menu" : "Collapse menu"} aria-expanded={!collapsed}
-                className="size-9 shrink-0 rounded-lg flex items-center justify-center text-slate-300 hover:bg-white/10 hover:text-white">
-                {collapsed ? <PanelLeftOpen className="size-5" /> : <PanelLeftClose className="size-5" />}
-              </button>
-            )}
-          </div>
-
-          {/* shift status */}
-          {showShift && <NavLink to="/shift" data-tip={collapsed ? (status.shiftOpenedAt ? "Shift open" : "No open shift") : undefined}
-            className={`mx-3 mt-3 rounded-lg border px-3 py-2.5 flex items-center gap-3 ${collapsed ? "justify-center px-0" : ""} ${"border-white/15 bg-white/10"}`}>
-            <span className={`size-2.5 shrink-0 rounded-full ${status.shiftOpenedAt ? "bg-green-600" : "bg-amber-500"}`} />
-            {!collapsed && (
-              <span className="leading-tight min-w-0">
-                <span className={`block text-sm font-semibold ${"text-white"}`}>{status.shiftOpenedAt ? "Shift open" : "No open shift"}</span>
-                <span className="block text-xs text-slate-400 truncate">{status.shiftOpenedAt ? `Since ${fmtTime(status.shiftOpenedAt)}` : "Open one on the Sell screen"}</span>
-              </span>
-            )}
-          </NavLink>}
-
-          {/* navigation */}
-          <nav className="flex-1 overflow-y-auto px-3 py-4">
-            {canReports && group("Overview", <>
-              {item("/dashboard", "Dashboard", LayoutDashboard)}
-              {item("/reports", "Reports", BarChart3)}
-            </>)}
-            {group("Selling", <>
-              {canSell && item("/", "Sell", ShoppingCart, undefined, true)}
-              {item("/sales", "Sales history", ReceiptText)}
-            </>)}
-            {group("Stock", <>
-              {item("/inventory", "Inventory", Package, canReports ? pill(status.lowStock, "amber") : undefined)}
-              {can("suppliers.manage") && item("/suppliers", "Suppliers", Truck)}
-            </>)}
-            {can("customers.manage") && group("People", <>
-              {item("/customers", "Customers", Users, pill(status.owing, "rose"))}
-            </>)}
-            {showShift && group("Money", item("/shift", "Shift & cash-up", Wallet))}
-            {canAdmin && group("Admin", <>
-              {can("settings.manage") && item("/settings", "Business", Briefcase, undefined, true, onSettings(""))}
-              {can("users.manage") && item("/settings?tab=staff", "Staff", UserCog, undefined, false, onSettings("staff"))}
-              {can("roles.manage") && item("/settings?tab=roles", "Roles & access", ShieldCheck, undefined, false, onSettings("roles"))}
-              {can("settings.manage") && item("/settings?tab=backup", "Backup", HardDriveDownload, undefined, false, onSettings("backup"))}
-            </>)}
-          </nav>
-
-          {/* who is signed in: here only in the phone menu; on larger screens it is in the top bar */}
-          {inDrawer && (
-          <div className="border-t border-white/10 p-2 space-y-1">
-            <div className={`flex items-center gap-2.5 rounded-lg px-2 py-1 ${collapsed ? "justify-center px-0" : ""}`}>
-              <span className="size-8 shrink-0 rounded-full bg-white/15 text-white text-sm font-bold flex items-center justify-center" data-tip={collapsed ? `${user.name} (${user.role})` : undefined}>{user.name[0]?.toUpperCase()}</span>
-              {!collapsed && (
-                <>
-                  <span className="leading-tight min-w-0 flex-1">
-                    <span className="block text-sm font-semibold text-white truncate">{user.name}</span>
-                    {user.role.toLowerCase() !== user.name.toLowerCase() && <span className="block text-xs text-slate-400 capitalize">{user.role}</span>}
-                  </span>
-                  <button onClick={logout} data-tip="Sign out" aria-label="Sign out" className="p-1.5 rounded-lg text-slate-400 hover:bg-white/10 hover:text-white"><LogOut className="size-[18px]" /></button>
-                </>
-              )}
-            </div>
-            {collapsed && <button onClick={logout} data-tip="Sign out" aria-label="Sign out" className="w-full flex justify-center p-2 rounded-lg text-slate-400 hover:bg-white/10 hover:text-white"><LogOut className="size-5" /></button>}
-          </div>
-          )}
-      </>
-    );
-  };
+  // the sections of the bottom bar, with the same visibility rules the old sidebar had
+  const some = (...p: (NavPage | false)[]) => p.filter(Boolean) as NavPage[];
+  const groups: NavGroup[] = [
+    canReports && {
+      label: "Overview", Icon: LayoutDashboard,
+      pages: some({ to: "/dashboard", label: "Dashboard", Icon: LayoutDashboard, active: at("/dashboard") }, { to: "/reports", label: "Reports", Icon: BarChart3, active: at("/reports") }),
+    },
+    {
+      label: "Selling", Icon: ShoppingCart,
+      pages: some(canSell && { to: "/", label: "Sell", Icon: ShoppingCart, active: at("/", true) }, { to: "/sales", label: "Sales history", Icon: ReceiptText, active: at("/sales") }),
+    },
+    {
+      label: "Stock", Icon: Package,
+      pages: some(
+        { to: "/inventory", label: "Inventory", Icon: Package, active: at("/inventory"), badge: canReports ? status.lowStock : 0, tone: "amber" },
+        can("suppliers.manage") && { to: "/suppliers", label: "Suppliers", Icon: Truck, active: at("/suppliers") },
+      ),
+    },
+    can("customers.manage") && {
+      label: "People", Icon: Users,
+      pages: some({ to: "/customers", label: "Customers", Icon: Users, active: at("/customers"), badge: status.owing, tone: "rose" }),
+    },
+    showShift && { label: "Money", Icon: Wallet, pages: some({ to: "/shift", label: "Shift and cash-up", Icon: Wallet, active: at("/shift") }) },
+    canAdmin && {
+      label: "Admin", Icon: SettingsIcon,
+      pages: some(
+        can("settings.manage") && { to: "/settings", label: "Business", Icon: Briefcase, active: onSettings("") },
+        can("users.manage") && { to: "/settings?tab=staff", label: "Staff", Icon: UserCog, active: onSettings("staff") },
+        can("roles.manage") && { to: "/settings?tab=roles", label: "Roles and access", Icon: ShieldCheck, active: onSettings("roles") },
+        can("settings.manage") && { to: "/settings?tab=backup", label: "Backup", Icon: HardDriveDownload, active: onSettings("backup") },
+      ),
+    },
+  ].filter(Boolean) as NavGroup[];
 
   return (
     <AuthCtx.Provider value={{ user, logout, can }}>
-      <div className="h-full flex flex-col md:flex-row">
-        {/* phone top bar */}
-        <header className="md:hidden shrink-0 flex items-center gap-3 side h-14 px-3 bg-side text-white border-b border-white/10 print:hidden">
-          <button onClick={() => setDrawer(true)} aria-label="Open menu" className="size-10 -ml-1 rounded-lg flex items-center justify-center hover:bg-white/10"><Menu className="size-6" /></button>
-          <span className="font-bold tracking-tight truncate flex-1">{brandOr(biz)}</span>
-          {showShift && <NavLink to="/shift" className="flex items-center gap-2 text-sm font-semibold rounded-lg border border-white/25 px-3 py-1.5">
-            <span className={`size-2.5 rounded-full ${status.shiftOpenedAt ? "bg-green-600" : "bg-amber-500"}`} />{status.shiftOpenedAt ? "Shift open" : "No shift"}
-          </NavLink>}
-        </header>
-
-        <SideTips />
-
-        {/* desktop / tablet sidebar */}
-        <aside className={`${collapsed ? "w-[4.75rem]" : "w-64"} side hidden md:flex shrink-0 bg-side border-r border-white/10 flex-col transition-[width] duration-200 print:hidden`}>
-          {renderSidebar(collapsed)}
-        </aside>
-
-        {/* phone menu drawer */}
-        <div
-          className={`md:hidden fixed inset-0 z-50 flex print:hidden transition-[visibility] duration-200 ${drawer ? "visible" : "invisible"}`}
-          aria-hidden={!drawer}
-          onClick={(e) => { if ((e.target as HTMLElement).closest("a")) setDrawer(false); }}
-        >
-          <div className={`side w-72 max-w-[85vw] bg-side flex flex-col shadow-pop transition-transform duration-200 ease-out ${drawer ? "translate-x-0" : "-translate-x-full"}`}>{renderSidebar(false, true)}</div>
-          <button
-            className={`flex-1 bg-slate-900/50 transition-opacity duration-200 ${drawer ? "opacity-100" : "opacity-0"}`}
-            onClick={() => setDrawer(false)} aria-label="Close menu" tabIndex={drawer ? 0 : -1}
-          />
-        </div>
-
-
-        <div className="flex-1 min-h-0 min-w-0 flex flex-col">
-        {/* top navigation bar: search on the left; shift, help and who is signed in on the right */}
-        <div className="shrink-0 bg-white border-b border-slate-200 px-4 py-2 flex items-center gap-3 print:hidden">
+      <div className="h-full flex flex-col">
+        {/* top bar: the shop, search, then shift, help and who is signed in */}
+        <header className="shrink-0 bg-white border-b border-slate-200 px-3 sm:px-4 py-2 flex items-center gap-2 sm:gap-3 print:hidden">
+          <div className="flex items-center gap-2 shrink-0 min-w-0">
+            {logo
+              ? <img src={logo} alt="" className="size-8 shrink-0 rounded-lg object-contain" />
+              : <span className="sm:hidden size-8 shrink-0 rounded-lg bg-accent text-white font-bold flex items-center justify-center" aria-hidden>{brandOr(biz)[0]?.toUpperCase()}</span>}
+            <span className="hidden sm:block font-bold tracking-tight truncate max-w-[11rem]">{brandOr(biz)}</span>
+          </div>
           <div className="flex-1 min-w-0 max-w-xl"><GlobalSearch pages={searchPages} /></div>
-          <div className="hidden md:flex items-center gap-2 ml-auto">
+          <div className="flex items-center gap-1.5 sm:gap-2 ml-auto shrink-0">
             {showShift && (
-              <NavLink to="/shift" className="flex items-center gap-2 text-sm font-semibold rounded-lg border border-slate-300 px-3 py-1.5 hover:bg-slate-50">
-                <span className={`size-2.5 rounded-full ${status.shiftOpenedAt ? "bg-green-600" : "bg-amber-500"}`} />{status.shiftOpenedAt ? "Shift open" : "No open shift"}
+              <NavLink to="/shift" aria-label={status.shiftOpenedAt ? "Shift open" : "No open shift"} className="flex items-center gap-2 text-sm font-semibold rounded-lg border border-slate-300 px-2.5 sm:px-3 py-1.5 hover:bg-slate-50">
+                <span className={`size-2.5 rounded-full ${status.shiftOpenedAt ? "bg-green-600" : "bg-amber-500"}`} />
+                <span className="hidden sm:inline">{status.shiftOpenedAt ? "Shift open" : "No open shift"}</span>
               </NavLink>
             )}
             <HelpButton variant="icon" />
-            <div className="flex items-center gap-2 pl-3 ml-1 border-l border-slate-200">
-              <span className="size-8 shrink-0 rounded-full bg-accent text-white text-sm font-bold flex items-center justify-center" aria-hidden>{user.name[0]?.toUpperCase()}</span>
+            <div className="flex items-center gap-2 sm:pl-3 sm:ml-1 sm:border-l border-slate-200">
+              <span className="hidden sm:flex size-8 shrink-0 rounded-full bg-accent text-white text-sm font-bold items-center justify-center" aria-hidden>{user.name[0]?.toUpperCase()}</span>
               <span className="leading-tight hidden lg:block">
                 <span className="block text-sm font-semibold">{user.name}</span>
                 {user.role.toLowerCase() !== user.name.toLowerCase() && <span className="block text-xs text-slate-500 capitalize">{user.role}</span>}
@@ -319,8 +219,9 @@ function Shell({ user, onLogout }: { user: User; onLogout: () => void }) {
               <button onClick={logout} aria-label="Sign out" title="Sign out" className="size-9 rounded-lg flex items-center justify-center text-slate-500 hover:bg-slate-100 hover:text-slate-900"><LogOut className="size-5" /></button>
             </div>
           </div>
-        </div>
-        <main className="flex-1 min-h-0 min-w-0 overflow-auto">
+        </header>
+
+        <main ref={mainRef} className="flex-1 min-h-0 min-w-0 overflow-auto">
           {lost && <div role="status" className="sticky top-0 z-20 bg-amber-100 text-amber-900 text-sm font-medium px-4 py-2 text-center print:hidden">Lost the connection to the shop computer. Retrying, and new activity will appear when it is back.</div>}
           <Routes>
             <Route path="/" element={canSell ? <Pos /> : <Navigate to={home} replace />} />
@@ -337,8 +238,15 @@ function Shell({ user, onLogout }: { user: User; onLogout: () => void }) {
             <Route path="*" element={<NotFound home={home} />} />
           </Routes>
         </main>
-        <SiteFooter />
+
+        {/* the footer keeps constant room for the bar, and slides down into it when the bar tucks away */}
+        <div className="relative shrink-0 bg-white pb-[calc(var(--bar-h)+env(safe-area-inset-bottom))] overflow-hidden print:hidden">
+          <div className={`transition-transform duration-300 ease-out ${barVisible ? "" : "translate-y-[calc(var(--bar-h)+env(safe-area-inset-bottom))]"}`}>
+            <SiteFooter />
+          </div>
         </div>
+
+        <BottomBar groups={groups} hidden={scrollHidden} onVisible={setBarVisible} />
       </div>
     </AuthCtx.Provider>
   );

@@ -23,8 +23,8 @@ const PRESETS = [{ days: 1, label: "Today" }, { days: 7, label: "7 days" }, { da
 const dateInput = "border border-slate-300 rounded-lg px-3 py-1.5 bg-white text-sm font-medium";
 
 /** Period selection shared by the Dashboard and Reports screens: presets or an exact date range. */
-export function useRange() {
-  const [days, setDays] = useState(1); // opens on Today
+export function useRange(initialDays = 1) {
+  const [days, setDays] = useState(initialDays); // the Dashboard opens on Today (1); Reports opens on 30 days
   const [custom, setCustom] = useState<{ from: string; to: string } | null>(null);
   const [data, setData] = useState<DashData | null>(null);
   const [err, setErr] = useState("");

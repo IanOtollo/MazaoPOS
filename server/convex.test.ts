@@ -668,6 +668,24 @@ try {
     assert.ok(!((await api("GET", "/api/categories")).body as any[]).some((c) => c.name === "Empty Cat"));
   }
 
+  // =================== items sold report ===================
+  {
+    assert.equal((await api("GET", "/api/reports/items-sold", undefined, cashierTok)).status, 403, "cashier cannot open reports");
+    const r = await api("GET", "/api/reports/items-sold");
+    assert.equal(r.status, 200, JSON.stringify(r.body).slice(0, 200));
+    assert.ok(r.body.items.length >= 1, "something sold");
+    assert.ok(r.body.items.some((x: any) => x.id === nail.body.id), "the nails sold earlier are listed");
+    const rev = r.body.items.map((x: any) => x.revenue_cents);
+    assert.deepEqual(rev, [...rev].sort((a: number, b: number) => b - a), "ranked by sales value");
+    assert.equal(r.body.totals.revenue_cents, rev.reduce((a: number, b: number) => a + b, 0), "totals add up");
+    assert.equal(r.body.totals.items, r.body.items.length);
+    assert.equal((await api("GET", "/api/reports/items-sold?from=2026-02-30&to=2026-03-01")).status, 400, "an impossible date is refused");
+    assert.equal((await api("GET", "/api/reports/items-sold?from=2026-03-05&to=2026-03-01")).status, 400, "start after end is refused");
+    const none = await api("GET", "/api/reports/items-sold?from=2000-01-01&to=2000-01-31");
+    assert.equal(none.status, 200);
+    assert.equal(none.body.items.length, 0, "nothing sold back in 2000");
+  }
+
   // =================== fast and slow movers ===================
   {
     assert.equal((await api("GET", "/api/reports/movers", undefined, cashierTok)).status, 403, "cashier cannot open reports");

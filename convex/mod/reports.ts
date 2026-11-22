@@ -275,6 +275,54 @@ export const routes: Record<string, Handler> = {
     };
   },
 
+  // every item sold in a period (not just the top few), for the Items sold report
+  "GET /api/reports/items-sold": async (ctx, { token, query }) => {
+    const user = await requirePerm(ctx, token, "reports.view");
+    const seeCost = can(user, "products.view_cost");
+    const today = todayEAT();
+    let firstDay: string;
+    let lastDay: string;
+    if (query.from || query.to) {
+      if (!query.from || !query.to || !YMD.test(query.from) || !YMD.test(query.to)) return fail(400, "Choose both a start date and an end date");
+      if (query.from > query.to) return fail(400, "The start date must not be after the end date");
+      if (query.to > today) return fail(400, "The end date cannot be in the future");
+      firstDay = query.from;
+      lastDay = query.to;
+    } else {
+      const n = Math.min(Math.max(Number(query.days) || 30, 1), 366);
+      lastDay = today;
+      firstDay = addDays(today, -(n - 1));
+    }
+    const span = Math.round((Date.parse(`${lastDay}T00:00:00Z`) - Date.parse(`${firstDay}T00:00:00Z`)) / DAY) + 1;
+    if (span > 366) return fail(400, "Choose a period of one year or less");
+    const sales = await salesBetween(ctx, eatDayRangeMs(firstDay).from, eatDayRangeMs(lastDay).to);
+
+    // net of refunds: refund lines are stored negative, so plain sums come out right
+    const agg = new Map<number, { qty: number; revenue: number; profit: number; orders: number }>();
+    for (const sale of sales) {
+      for (const it of sale.items) {
+        const a = agg.get(it.productId) ?? { qty: 0, revenue: 0, profit: 0, orders: 0 };
+        a.qty += it.baseQtyMilli;
+        a.revenue += it.lineTotalCents;
+        a.profit += it.lineTotalCents - it.vatCents - Math.trunc((it.costCents * it.qtyMilli) / 1000);
+        if (sale.kind === "sale") a.orders++;
+        agg.set(it.productId, a);
+      }
+    }
+    const products = new Map((await ctx.db.query("products").collect()).map((p) => [p.id, p]));
+    const items = [...agg.entries()]
+      .filter(([, a]) => a.qty !== 0 || a.revenue !== 0)
+      .map(([id, a]) => {
+        const p = products.get(id);
+        return { id, sku: p?.sku ?? "", name: p?.name ?? "Removed item", unit: p?.unit ?? "", qty_milli: a.qty, revenue_cents: a.revenue, profit_cents: seeCost ? a.profit : null, orders: a.orders };
+      })
+      .sort((x, y) => y.revenue_cents - x.revenue_cents || x.name.localeCompare(y.name));
+    return {
+      from: firstDay, to: lastDay, items,
+      totals: { revenue_cents: items.reduce((t, i) => t + i.revenue_cents, 0), profit_cents: seeCost ? items.reduce((t, i) => t + (i.profit_cents ?? 0), 0) : null, items: items.length },
+    };
+  },
+
   // what sells fast (by sales value) and what sits on the shelf (in stock, selling least)
   "GET /api/reports/movers": async (ctx, { token, query }) => {
     const user = await requirePerm(ctx, token, "reports.view");

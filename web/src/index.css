@@ -16,6 +16,10 @@
 
 html, body, #root { height: 100%; }
 
+/* height of the bottom navigation bar: taller on phones, slimmer from md up. The page footer reserves the same space. */
+:root { --bar-h: 4rem; }
+@media (min-width: 768px) { :root { --bar-h: 3.5rem; } }
+
 /* ---- firmer borders: cards, tables, dividers and inputs read clearly without being heavy ---- */
 .border-slate-200, .border-gray-200 { border-color: #cbd5e1; }
 .border-slate-100 { border-color: #e2e8f0; }
@@ -24,9 +28,11 @@ html, body, #root { height: 100%; }
 .divide-slate-200 > :not(:last-child) { border-color: #cbd5e1; }
 
 /* ---- accessibility choices (see lib/a11y.ts) ---- */
-/* the sidebar is dark, so its pale text must stay pale in high contrast mode */
-html[data-contrast="high"] .side .text-slate-300, html[data-contrast="high"] .side .text-slate-400 { color: #ffffff; }
-html[data-contrast="high"] .side { --color-side: #0a1c42; }
+/* the bottom bar is navy on phones only, so its pale text must stay pale in high contrast mode there */
+@media (max-width: 767px) {
+  html[data-contrast="high"] .side .text-slate-300, html[data-contrast="high"] .side .text-slate-400 { color: #ffffff; }
+  html[data-contrast="high"] .side { --color-side: #0a1c42; }
+}
 html[data-text="large"] { font-size: 112.5%; }
 html[data-text="xlarge"] { font-size: 125%; }
 html[data-contrast="high"] { --color-line: #64748b; }
