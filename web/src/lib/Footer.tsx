@@ -1,7 +1,7 @@
 import { brandOr, useBrand } from "./brand";
 import { HelpButton } from "./Help";
 
-const MAKER = (
+export const MAKER = (
   <a href="https://marabimadeit.co.ke" target="_blank" rel="noopener noreferrer" className="underline underline-offset-2 hover:text-slate-800">Marabi made it</a>
 );
 
@@ -16,7 +16,7 @@ export function SiteFooter({ variant = "app" }: { variant?: "app" | "auth" }) {
       <footer className="shrink-0 grid grid-cols-[1fr_auto_1fr] items-center gap-3 px-4 py-3 text-xs text-slate-500 print:hidden">
         <span><HelpButton /></span>
         <span className="text-center">{rights}</span>
-        <span className="text-right">{MAKER}</span>
+        <span />
       </footer>
     );
   }

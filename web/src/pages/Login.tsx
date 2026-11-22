@@ -3,7 +3,7 @@ import { Delete } from "lucide-react";
 import { ErrorLine } from "../lib/ui";
 import { get, post, type User } from "../lib/api";
 import { brandOr, setBrand, setLogo, useLogoUrl } from "../lib/brand";
-import { SiteFooter } from "../lib/Footer";
+import { MAKER, SiteFooter } from "../lib/Footer";
 
 const MAX_PIN = 8;
 
@@ -78,6 +78,7 @@ export default function Login({ onLogin }: { onLogin: (u: User, token: string) =
           </button>
           <ErrorLine msg={err} />
         </div>
+        <p className="mt-4 text-center text-xs text-slate-500">{MAKER}</p>
       </div>
       </div>
       <SiteFooter variant="auth" />
