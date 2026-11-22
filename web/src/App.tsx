@@ -266,6 +266,24 @@ function Shell({ user, onLogout }: { user: User; onLogout: () => void }) {
     );
   };
 
+  const onTill = loc.pathname === "/"; // the till never scrolls, so its footer stays at the bottom of the screen
+  const routes = (
+            <Routes>
+              <Route path="/" element={canSell ? <Pos /> : <Navigate to={home} replace />} />
+              <Route path="/dashboard" element={canReports ? <Dashboard /> : <Navigate to={home} replace />} />
+              <Route path="/sales" element={<Sales />} />
+              <Route path="/inventory" element={<Products />} />
+              <Route path="/inventory/:id" element={<ProductDetail />} />
+              <Route path="/suppliers" element={can("suppliers.manage") ? <Suppliers /> : <Navigate to={home} replace />} />
+              <Route path="/products" element={<Navigate to="/inventory" replace />} />
+              <Route path="/customers" element={can("customers.manage") ? <Customers /> : <Navigate to={home} replace />} />
+              <Route path="/shift" element={<Shift />} />
+              <Route path="/reports" element={canReports ? <Reports /> : <Navigate to={home} replace />} />
+              <Route path="/settings" element={canAdmin ? <Settings /> : <Navigate to={home} replace />} />
+              <Route path="*" element={<NotFound home={home} />} />
+            </Routes>
+  );
+
   return (
     <AuthCtx.Provider value={{ user, logout, can }}>
       <div className="h-full flex flex-col md:flex-row">
@@ -320,24 +338,12 @@ function Shell({ user, onLogout }: { user: User; onLogout: () => void }) {
             </div>
           </div>
         </div>
-        <main className="flex-1 min-h-0 min-w-0 overflow-auto">
+        <main className={`flex-1 min-h-0 min-w-0 overflow-auto ${onTill ? "" : "flex flex-col"}`}>
           {lost && <div role="status" className="sticky top-0 z-20 bg-amber-100 text-amber-900 text-sm font-medium px-4 py-2 text-center print:hidden">Lost the connection to the shop computer. Retrying, and new activity will appear when it is back.</div>}
-          <Routes>
-            <Route path="/" element={canSell ? <Pos /> : <Navigate to={home} replace />} />
-            <Route path="/dashboard" element={canReports ? <Dashboard /> : <Navigate to={home} replace />} />
-            <Route path="/sales" element={<Sales />} />
-            <Route path="/inventory" element={<Products />} />
-            <Route path="/inventory/:id" element={<ProductDetail />} />
-            <Route path="/suppliers" element={can("suppliers.manage") ? <Suppliers /> : <Navigate to={home} replace />} />
-            <Route path="/products" element={<Navigate to="/inventory" replace />} />
-            <Route path="/customers" element={can("customers.manage") ? <Customers /> : <Navigate to={home} replace />} />
-            <Route path="/shift" element={<Shift />} />
-            <Route path="/reports" element={canReports ? <Reports /> : <Navigate to={home} replace />} />
-            <Route path="/settings" element={canAdmin ? <Settings /> : <Navigate to={home} replace />} />
-            <Route path="*" element={<NotFound home={home} />} />
-          </Routes>
+          {onTill ? routes : <div className="flex-1 shrink-0">{routes}</div>}
+          {!onTill && <SiteFooter />}
         </main>
-        <SiteFooter />
+        {onTill && <SiteFooter />}
         </div>
       </div>
     </AuthCtx.Provider>

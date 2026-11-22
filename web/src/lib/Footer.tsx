@@ -14,7 +14,7 @@ export function SiteFooter({ variant = "app" }: { variant?: "app" | "auth" }) {
     return <footer className="shrink-0 px-4 py-3 text-center text-xs text-slate-500 print:hidden">{rights}</footer>;
   }
   return (
-    <footer className="shrink-0 px-4 py-1.5 text-[11px] leading-4 text-slate-400 border-t border-slate-200 bg-white truncate print:hidden">
+    <footer className="shrink-0 px-4 py-2 text-center text-[11px] leading-4 text-slate-500 border-t border-slate-200 bg-white print:hidden">
       {rights}
     </footer>
   );
