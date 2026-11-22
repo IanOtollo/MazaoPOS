@@ -46,10 +46,10 @@ export function BottomBar({ groups, hidden, onVisible }: { groups: NavGroup[]; h
   }, [open]);
 
   // the tab is a big touch target; the pill inside it carries the colours
-  const tab = "flex-1 min-w-12 h-[var(--bar-h)] flex items-center justify-center px-0.5 focus-visible:outline-2 focus-visible:outline-accent focus-visible:-outline-offset-2";
+  const tab = "flex-1 md:flex-none min-w-12 md:min-w-24 h-16 md:h-14 flex items-center justify-center px-0.5 focus-visible:outline-2 focus-visible:outline-accent focus-visible:-outline-offset-2";
   const pill = (active: boolean) =>
-    `relative flex flex-col items-center justify-center gap-0.5 min-w-14 md:min-w-0 w-full max-w-24 md:max-w-none h-14 md:h-full rounded-2xl md:rounded-none px-2 text-[11px] font-semibold transition-colors ${
-      active ? "bg-accent text-white md:bg-transparent md:text-accent" : "text-slate-300 hover:text-white md:text-slate-500 md:hover:text-slate-900 md:hover:bg-slate-50"
+    `relative flex flex-col items-center justify-center gap-0.5 min-w-14 md:min-w-0 w-full max-w-24 md:max-w-none h-14 md:h-12 rounded-2xl md:rounded-xl px-2 text-[11px] font-semibold transition-colors ${
+      active ? "bg-accent text-white md:bg-blue-50 md:text-accent-dark" : "text-slate-300 hover:text-white md:text-slate-600 md:hover:text-slate-900 md:hover:bg-slate-100"
     }`;
 
   const shown = groups.filter((g) => g.pages.length > 0);
@@ -58,15 +58,15 @@ export function BottomBar({ groups, hidden, onVisible }: { groups: NavGroup[]; h
   return (
     <nav ref={root} aria-label="Main"
       onFocus={() => setFocused(true)} onBlur={(e) => { if (!e.currentTarget.contains(e.relatedTarget as Node)) setFocused(false); }}
-      className={`side fixed inset-x-0 bottom-0 z-40 bg-side md:bg-white border-t border-white/10 md:border-slate-200 shadow-[0_-8px_24px_rgba(15,23,42,0.28)] md:shadow-[0_-4px_14px_rgba(15,23,42,0.06)] pb-[env(safe-area-inset-bottom)] print:hidden transition-[transform,opacity] duration-300 ease-out ${visible ? "" : "translate-y-full opacity-0 pointer-events-none"}`}>
-      <div className="mx-auto flex max-w-3xl">
+      className={`side fixed inset-x-0 bottom-0 z-40 bg-side md:bg-white border-t border-white/10 shadow-[0_-8px_24px_rgba(15,23,42,0.28)] pb-[env(safe-area-inset-bottom)] md:inset-x-auto md:left-1/2 md:-translate-x-1/2 md:bottom-4 md:w-max md:max-w-[calc(100vw-2rem)] md:rounded-2xl md:border md:border-slate-200 md:shadow-[0_14px_36px_rgba(15,23,42,0.20)] md:pb-0 print:hidden transition-[transform,opacity] duration-300 ease-out ${visible ? "" : "translate-y-full opacity-0 pointer-events-none"}`}>
+      <div className="mx-auto flex max-w-3xl md:px-1.5">
         {shown.map((g) => {
           const active = g.pages.some((p) => p.active);
           const badge = g.pages.reduce((n, p) => n + (p.badge ?? 0), 0);
           const tone = g.pages.find((p) => (p.badge ?? 0) > 0)?.tone;
           const inner = (
             <>
-              {active && <span className="absolute top-0 hidden md:block h-0.5 w-10 rounded-b-full bg-accent" aria-hidden />}
+              
               <span className="relative">
                 <g.Icon className="size-6 md:size-5" aria-hidden />
                 {badge > 0 && <span className={`absolute -top-1.5 -right-3 min-w-4 h-4 px-1 rounded-full text-[10px] leading-4 text-center font-bold ring-2 ring-side md:ring-white ${badgeCls(tone)}`}>{badge > 99 ? "99+" : badge}</span>}

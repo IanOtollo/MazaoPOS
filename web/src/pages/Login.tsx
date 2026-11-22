@@ -4,6 +4,7 @@ import { ErrorLine } from "../lib/ui";
 import { get, post, type User } from "../lib/api";
 import { brandOr, setBrand, setLogo, useLogoUrl } from "../lib/brand";
 import { MAKER, SiteFooter } from "../lib/Footer";
+import { HelpButton } from "../lib/Help";
 
 const MAX_PIN = 8;
 
@@ -51,7 +52,8 @@ export default function Login({ onLogin }: { onLogin: (u: User, token: string) =
   const key = "h-14 rounded-lg border border-slate-300 bg-white text-xl font-semibold text-slate-900 hover:bg-slate-50 active:bg-slate-100 transition-colors";
 
   return (
-    <div className="h-full flex flex-col bg-slate-100">
+    <div className="relative h-full flex flex-col bg-slate-100">
+      <div className="absolute top-3 right-3 z-10"><HelpButton variant="icon" /></div>
       <div className="flex-1 min-h-0 overflow-auto flex items-center justify-center p-4">
       <div className="w-full max-w-[20rem]">
         {logo && <img src={logo} alt="" className="mx-auto mb-3 h-20 max-w-[12rem] object-contain" />}
