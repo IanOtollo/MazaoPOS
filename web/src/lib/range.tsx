@@ -66,7 +66,7 @@ export function kpiSeries(d: DashData) {
 
 export const fmtDay = (ymd: string) => new Date(ymd + "T00:00:00Z").toLocaleDateString("en-KE", { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" });
 
-function RangePicker({ days, custom, setDays, setCustom }: { days: number; custom: { from: string; to: string } | null; setDays: (n: number) => void; setCustom: (c: { from: string; to: string } | null) => void }) {
+export function RangePicker({ days, custom, setDays, setCustom }: { days: number; custom: { from: string; to: string } | null; setDays: (n: number) => void; setCustom: (c: { from: string; to: string } | null) => void }) {
   const pickCustom = () => {
     const to = todayEAT();
     const from = new Date(new Date(to + "T00:00:00Z").getTime() - 6 * 86400000).toISOString().slice(0, 10);

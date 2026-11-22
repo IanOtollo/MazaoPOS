@@ -688,6 +688,23 @@ try {
     assert.equal(none.body.items.length, 0, "nothing sold back in 2000");
   }
 
+  // =================== sales list: a day or a range of dates ===================
+  {
+    const todayStr = new Date(Date.now() + 3 * 3600 * 1000).toISOString().slice(0, 10);
+    const weekAgo = new Date(Date.now() + 3 * 3600 * 1000 - 6 * 86400000).toISOString().slice(0, 10);
+    const one = await api("GET", "/api/sales");
+    const range = await api("GET", `/api/sales?from=${weekAgo}&to=${todayStr}`);
+    assert.equal(range.status, 200, JSON.stringify(range.body).slice(0, 200));
+    assert.ok(one.body.length >= 1, "there are sales today");
+    assert.ok(range.body.length >= one.body.length, "a week holds at least today's sales");
+    assert.equal((await api("GET", `/api/sales?from=${weekAgo}&to=${todayStr}&limit=1`)).body.length, 1, "a limit caps the list");
+    assert.equal((await api("GET", "/api/sales?from=2000-01-01&to=2000-01-31")).body.length, 0, "no sales back in 2000");
+    assert.equal((await api("GET", `/api/sales?from=${todayStr}`)).status, 400, "both dates are needed");
+    assert.equal((await api("GET", `/api/sales?from=${todayStr}&to=${weekAgo}`)).status, 400, "start after end is refused");
+    assert.equal((await api("GET", "/api/sales?from=1990-01-01&to=2026-01-01")).status, 400, "more than a year is refused");
+    assert.equal((await api("GET", "/api/sales?from=2026-02-30&to=2026-03-01")).status, 400, "an impossible date is refused");
+  }
+
   // =================== fast and slow movers ===================
   {
     assert.equal((await api("GET", "/api/reports/movers", undefined, cashierTok)).status, 403, "cashier cannot open reports");

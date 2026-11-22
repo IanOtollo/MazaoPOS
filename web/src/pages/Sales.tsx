@@ -1,34 +1,48 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { fmtKES, fmtQty, toMilli } from "../../../shared/money";
 import { fmtTime, get, post, todayEAT } from "../lib/api";
 import { useAuth } from "../lib/api";
 import { Button, ErrorLine, Field, Input, Modal, NumInput, PageHead, inputCls, td, th, Select, PinInput } from "../lib/ui";
 import { Receipt, type SaleDoc } from "../lib/Receipt";
 import { useLive } from "../lib/live";
+import { RangePicker } from "../lib/range";
 
 interface Row { id: number; receipt_no: string; kind: string; total_cents: number; created_at: string; cashier: string; customer_name: string | null; methods: string | null }
 
 export default function Sales() {
-  const [date, setDate] = useState(todayEAT());
+  const SHOW = 500; // rows shown; one more is asked for so the page can say when there are others
+  const [days, setDays] = useState(1); // opens on Today
+  const [custom, setCustom] = useState<{ from: string; to: string } | null>(null);
   const [q, setQ] = useState("");
   const [rows, setRows] = useState<Row[]>([]);
   const [open, setOpen] = useState<number | null>(null);
-  const load = useCallback(() => get<Row[]>(`/api/sales?date=${date}&q=${encodeURIComponent(q)}`).then(setRows), [date, q]);
+  const span = useMemo(() => {
+    if (custom) return custom;
+    const to = todayEAT();
+    return { from: new Date(new Date(to + "T00:00:00Z").getTime() - (days - 1) * 86400000).toISOString().slice(0, 10), to };
+  }, [days, custom]);
+  const load = useCallback(() => {
+    // while a custom range is half-typed or backwards, keep showing the last good list
+    if (!span.from || !span.to || span.from > span.to) return Promise.resolve();
+    return get<Row[]>(`/api/sales?from=${span.from}&to=${span.to}&limit=${SHOW + 1}&q=${encodeURIComponent(q)}`).then(setRows);
+  }, [span, q]);
   useEffect(() => { load(); }, [load]);
   useLive(["sales"], load);
-  const sum = rows.reduce((a, r) => a + r.total_cents, 0);
+  const more = rows.length > SHOW;
+  const shown = more ? rows.slice(0, SHOW) : rows;
+  const sum = shown.reduce((a, r) => a + r.total_cents, 0);
 
   return (
     <div className="p-4">
       <PageHead title="Sales">
-        <Input type="date" value={date} max={todayEAT()} onChange={(e) => setDate(e.target.value)} className="!w-44" />
+        <RangePicker days={days} custom={custom} setDays={setDays} setCustom={setCustom} />
         <Input placeholder="Receipt no." value={q} onChange={(e) => setQ(e.target.value)} className="!w-40" />
       </PageHead>
       <div className="bg-white border border-line rounded-xl shadow-card overflow-auto">
         <table className="w-full min-w-[40rem]">
           <thead><tr><th className={th}>Receipt</th><th className={th}>Time</th><th className={th}>Cashier</th><th className={th}>Customer</th><th className={th}>Paid by</th><th className={`${th} text-right`}>Total</th></tr></thead>
           <tbody>
-            {rows.map((r) => (
+            {shown.map((r) => (
               <tr key={r.id} onClick={() => setOpen(r.id)} className="cursor-pointer hover:bg-blue-50">
                 <td className={td}>{r.receipt_no}{r.kind === "refund" && <span className="text-danger text-xs font-semibold"> REFUND</span>}</td>
                 <td className={td}>{fmtTime(r.created_at)}</td><td className={td}>{r.cashier}</td>
@@ -36,11 +50,12 @@ export default function Sales() {
                 <td className={`${td} num ${r.total_cents < 0 ? "text-danger" : ""}`}>{fmtKES(r.total_cents)}</td>
               </tr>
             ))}
-            {!rows.length && <tr><td className={`${td} text-gray-500`} colSpan={6}>No sales for this day.</td></tr>}
+            {!rows.length && <tr><td className={`${td} text-gray-500`} colSpan={6}>No sales in this period.</td></tr>}
           </tbody>
-          {!!rows.length && <tfoot><tr><td className={`${td} font-semibold`} colSpan={5}>Net total</td><td className={`${td} num font-semibold`}>{fmtKES(sum)}</td></tr></tfoot>}
+          {!!shown.length && <tfoot><tr><td className={`${td} font-semibold`} colSpan={5}>Net total</td><td className={`${td} num font-semibold`}>{fmtKES(sum)}</td></tr></tfoot>}
         </table>
       </div>
+      {more && <p className="text-sm text-slate-600 mt-2">Showing the latest {SHOW} sales in this period. Choose fewer days to see the others.</p>}
       {open && <SaleView id={open} onClose={() => setOpen(null)} onChanged={load} />}
     </div>
   );

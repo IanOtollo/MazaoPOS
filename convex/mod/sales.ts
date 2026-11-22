@@ -351,14 +351,28 @@ export const routes: Record<string, Handler> = {
   // ---------------- sale history ----------------
   "GET /api/sales": async (ctx, { token, query }) => {
     const user = await authenticate(ctx, token);
-    const { from, to } = eatDayRangeMs(query.date || todayEAT());
+    // one day (?date=) as before, or a range (?from=&to=)
+    let from: number;
+    let to: number;
+    if (query.from || query.to) {
+      if (!query.from || !query.to) return fail(400, "Choose both a start date and an end date");
+      if (query.from > query.to) return fail(400, "The start date must not be after the end date");
+      const a = eatDayRangeMs(query.from);
+      const z = eatDayRangeMs(query.to);
+      if ((z.to - a.from) / 86400000 > 366) return fail(400, "Choose a period of one year or less");
+      from = a.from;
+      to = z.to;
+    } else {
+      ({ from, to } = eatDayRangeMs(query.date || todayEAT()));
+    }
+    const limit = Math.min(Math.max(Math.floor(Number(query.limit)) || 0, 0), 5000);
     const mine = !can(user, "sales.view_all");
     const needle = (query.q ?? "").toLowerCase();
     const day = await ctx.db.query("sales").withIndex("by_created", (q) => q.gte("createdAt", from).lt("createdAt", to)).order("desc").collect();
     const rows = day.filter((s) => (!mine || s.userId === user.id) && (!needle || s.receiptNo.toLowerCase().includes(needle))).sort((a, b) => b.id - a.id);
     const users = new Map((await ctx.db.query("users").collect()).map((u) => [u.id, u.name]));
     const customers = new Map((await ctx.db.query("customers").collect()).map((c) => [c.id, c.name]));
-    return rows.map((s) => {
+    return (limit ? rows.slice(0, limit) : rows).map((s) => {
       const methods = [...new Set(s.payments.map((p) => p.method))];
       return {
         id: s.id, receipt_no: s.receiptNo, kind: s.kind, total_cents: s.totalCents, created_at: iso(s.createdAt),
