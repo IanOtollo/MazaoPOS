@@ -30,7 +30,7 @@ export function Categories() {
   };
 
   return (
-    <div className="max-w-2xl">
+    <div>
       <p className="text-slate-600 mb-3">Categories group your items so they are easy to find and filter. Open an item to change its category.</p>
       {canManage && (
         <form className="flex flex-wrap items-center gap-2 mb-4" onSubmit={async (e) => { e.preventDefault(); if (!name.trim()) return; if (await run(() => post("/api/categories", { name: name.trim() }), "Category added")) setName(""); }}>

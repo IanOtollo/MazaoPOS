@@ -37,14 +37,14 @@ export default function Movers() {
       </div>
 
       {failed && !d && <p className="text-slate-500">The movers could not be loaded. Try again in a moment.</p>}
-      {!d && !failed && <div className="grid xl:grid-cols-2 gap-6">{[0, 1].map((i) => <div key={i} className="h-64 rounded-xl bg-slate-200/70 animate-pulse" />)}</div>}
+      {!d && !failed && <div className="grid 2xl:grid-cols-2 gap-6">{[0, 1].map((i) => <div key={i} className="h-64 rounded-xl bg-slate-200/70 animate-pulse" />)}</div>}
 
       {d && (
         <>
           <p className="text-sm text-slate-600 mb-3">
             {d.totals.items_sold.toLocaleString("en-KE")} items sold in this period. {d.totals.in_stock_unsold.toLocaleString("en-KE")} of {d.totals.items_in_stock.toLocaleString("en-KE")} items in stock did not sell at all.
           </p>
-          <div className="grid xl:grid-cols-2 gap-6">
+          <div className="grid 2xl:grid-cols-2 gap-6">
             <Card title="Fast movers" sub="Top items by sales value">
               {!d.fast.length ? <p className="text-slate-500 py-4">Nothing has sold in this period.</p> : (
                 <div className="overflow-auto -mx-2">

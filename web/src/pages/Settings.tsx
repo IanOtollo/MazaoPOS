@@ -1,12 +1,13 @@
 import { useCallback, useEffect, useState } from "react";
 import { useSearchParams } from "react-router-dom";
-import { Download, Lock, Plus, Trash2 } from "lucide-react";
+import { Lock, Plus, Trash2 } from "lucide-react";
 import { ADMIN_EXCLUDED, PERMISSIONS, PERMISSION_GROUPS, type Permission } from "../../../shared/permissions";
 import { api, apiUrl, get, getToken, patch, post, put, useAuth } from "../lib/api";
 import { Button, ErrorLine, Field, Input, Modal, PageHead, inputCls, td, th, Select, PinInput } from "../lib/ui";
 import { useConfirm, useToast } from "../lib/toast";
 import { setBrand, setLogo, useLogoUrl } from "../lib/brand";
 import { useLive } from "../lib/live";
+import { Backup } from "./settings/Backup";
 
 type Tab = "business" | "staff" | "roles" | "backup";
 
@@ -19,17 +20,28 @@ export default function Settings() {
   const TITLE: Record<Tab, string> = { business: "Business", staff: "Staff", roles: "Roles & access", backup: "Backup" };
 
   return (
-    <div className="p-4 sm:p-6 max-w-5xl">
+    <div className="p-4 sm:p-6">
       <PageHead title={TITLE[tab]} />
       {tab === "business" && <Business />}
       {tab === "staff" && <Staff />}
       {tab === "roles" && <Roles />}
-      {tab === "backup" && <Backups />}
+      {tab === "backup" && <Backup />}
     </div>
   );
 }
 
 // ---------------------------------------------------------------- Business
+/** A titled white card used to group related settings. */
+function SettingsCard({ title, hint, children }: { title: string; hint?: string; children: React.ReactNode }) {
+  return (
+    <section className="bg-white border border-line rounded-xl shadow-card p-5">
+      <h2 className="font-semibold text-base">{title}</h2>
+      {hint && <p className="text-sm text-slate-500 mt-0.5">{hint}</p>}
+      <div className="mt-4 space-y-4">{children}</div>
+    </section>
+  );
+}
+
 function Business() {
   const toast = useToast();
   const [s, setS] = useState<Record<string, string>>({});
@@ -42,20 +54,29 @@ function Business() {
   };
 
   return (
-    <div className="max-w-2xl">
-      <LogoUpload />
-      <div className="grid sm:grid-cols-2 gap-4 mb-4">
-        <Field label="Business name"><Input value={s.business_name ?? ""} onChange={(e) => set("business_name", e.target.value)} /></Field>
-        <Field label="Address"><Input value={s.address ?? ""} onChange={(e) => set("address", e.target.value)} /></Field>
-        <Field label="Phone"><Input value={s.phone ?? ""} onChange={(e) => set("phone", e.target.value)} /></Field>
-        <div className="sm:col-span-2"><Field label="Receipt footer"><Input value={s.receipt_footer ?? ""} onChange={(e) => set("receipt_footer", e.target.value)} /></Field></div>
-        <label className="flex items-center gap-2 sm:col-span-2">
-          <input type="checkbox" checked={s.allow_negative_stock === "1"} onChange={(e) => set("allow_negative_stock", e.target.checked ? "1" : "0")} />
-          Allow selling items that are not in stock (stock count goes negative)
-        </label>
+    <div>
+      <div className="grid lg:grid-cols-2 xl:grid-cols-3 gap-4 items-start">
+        <SettingsCard title="Business details" hint="Shown on receipts and statements.">
+          <Field label="Business name"><Input value={s.business_name ?? ""} onChange={(e) => set("business_name", e.target.value)} /></Field>
+          <Field label="Address"><Input value={s.address ?? ""} onChange={(e) => set("address", e.target.value)} /></Field>
+          <Field label="Phone"><Input value={s.phone ?? ""} onChange={(e) => set("phone", e.target.value)} /></Field>
+        </SettingsCard>
+        <SettingsCard title="Logo and receipts" hint="What customers see on the sign-in screen, receipts and statements.">
+          <LogoUpload />
+          <Field label="Receipt footer"><Input value={s.receipt_footer ?? ""} onChange={(e) => set("receipt_footer", e.target.value)} /></Field>
+        </SettingsCard>
+        <SettingsCard title="Selling rules" hint="How the till treats stock.">
+          <label className="flex items-start gap-3">
+            <input type="checkbox" className="mt-1 size-4" checked={s.allow_negative_stock === "1"} onChange={(e) => set("allow_negative_stock", e.target.checked ? "1" : "0")} />
+            <span>Allow selling items that are not in stock<span className="block text-sm text-slate-500">The stock count then goes negative until the next delivery is received.</span></span>
+          </label>
+        </SettingsCard>
       </div>
       <ErrorLine msg={err} />
-      <Button variant="primary" onClick={save} className="mt-2">Save settings</Button>
+      <div className="mt-4 flex items-center justify-between gap-3 rounded-xl border border-line bg-white px-5 py-3 shadow-card">
+        <span className="text-sm text-slate-500">Changes apply to receipts and the sign-in screen straight away.</span>
+        <Button variant="primary" onClick={save}>Save settings</Button>
+      </div>
     </div>
   );
 }
@@ -101,7 +122,7 @@ function LogoUpload() {
     try { await api("DELETE", "/api/logo"); setLogo(""); toast({ msg: "Logo removed" }); } catch (e) { toast({ msg: (e as Error).message, kind: "err" }); }
   };
   return (
-    <div className="flex items-center gap-4 mb-6 pb-6 border-b border-slate-200">
+    <div className="flex items-start gap-4 pb-4 border-b border-slate-200">
       <div className="size-24 shrink-0 rounded-xl border border-dashed border-slate-300 bg-white flex items-center justify-center overflow-hidden">
         {logo ? <img src={logo} alt="Your logo" className="max-h-full max-w-full object-contain" /> : <span className="text-xs text-slate-400 text-center px-2">No logo yet</span>}
       </div>
@@ -330,16 +351,6 @@ function Roles() {
           )}
         </div>
       )}
-    </div>
-  );
-}
-
-// ---------------------------------------------------------------- Backup
-function Backups() {
-  return (
-    <div className="max-w-3xl">
-      <p className="text-slate-600 mb-2">Your products, sales, stock and staff are stored safely in the cloud and every change is saved the moment it happens. There is nothing to back up by hand.</p>
-      <p className="text-sm text-slate-500">If you ever want a full copy of the data, ask your system administrator to export it from the data dashboard.</p>
     </div>
   );
 }

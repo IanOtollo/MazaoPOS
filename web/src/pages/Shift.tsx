@@ -26,7 +26,7 @@ export default function Shift() {
 
   if (s === undefined) return null;
   return (
-    <div className="p-4 max-w-2xl">
+    <div className="p-4 sm:p-6">
       <PageHead title="Shift & cash-up" />
       {result && (
         <div className="border border-line rounded-xl p-5 mb-4 bg-white shadow-card">
@@ -40,21 +40,24 @@ export default function Shift() {
         </div>
       )}
       {s ? (
-        <div className="bg-white border border-line rounded-xl shadow-card p-5">
-          <p className="text-sm text-gray-600 mb-3">Open since {fmtTime(s.opened_at)}</p>
-          <div className="flex justify-between"><span>Opening float</span><span className="num">{fmtKES(s.opening_float_cents)}</span></div>
-          {Object.entries(s.byMethod as Record<string, number>).map(([m, v]) => (
-            <div key={m} className="flex justify-between capitalize"><span>{m} sales</span><span className="num">{fmtKES(v)}</span></div>
-          ))}
-          <div className="flex justify-between font-semibold text-lg border-t border-line mt-2 pt-2"><span>Cash that should be in drawer</span><span className="num">{fmtKES(s.expectedCashCents)}</span></div>
-          <div className="mt-4 space-y-3">
+        <div className="bg-white border border-line rounded-xl shadow-card p-5 grid md:grid-cols-2 gap-x-10 gap-y-6">
+          <div>
+            <p className="text-sm text-gray-600 mb-3">Open since {fmtTime(s.opened_at)}</p>
+            <div className="flex justify-between"><span>Opening float</span><span className="num">{fmtKES(s.opening_float_cents)}</span></div>
+            {Object.entries(s.byMethod as Record<string, number>).map(([m, v]) => (
+              <div key={m} className="flex justify-between capitalize"><span>{m} sales</span><span className="num">{fmtKES(v)}</span></div>
+            ))}
+            <div className="flex justify-between font-semibold text-lg border-t border-line mt-2 pt-2"><span>Cash that should be in drawer</span><span className="num">{fmtKES(s.expectedCashCents)}</span></div>
+          </div>
+          <div className="space-y-3">
+            <h2 className="font-semibold">Close this shift</h2>
             <Field label="Cash counted in drawer (KES)"><NumInput value={counted} onChange={setCounted} /></Field>
             <Field label="Note (optional)"><Input value={note} onChange={(e) => setNote(e.target.value)} /></Field>
             <ErrorLine msg={err} />
             <Button variant="primary" onClick={close}>Close shift</Button>
           </div>
         </div>
-      ) : !result && <p className="text-gray-600">You have no open shift. Go to Sell to open one.</p>}
+      ) : !result && <div className="bg-white border border-line rounded-xl shadow-card p-5 text-slate-600">You have no open shift. Go to Sell to open one.</div>}
 
       {history.length > 0 && (
         <>

@@ -9,12 +9,13 @@ import { routes as suppliers } from "./mod/suppliers";
 import { routes as reports } from "./mod/reports";
 import { routes as lpo } from "./mod/lpo";
 import { routes as misc } from "./mod/misc";
+import { routes as backup } from "./mod/backup";
 
 /*
  * Every request from the screens arrives here as one call. Each module owns a table of routes keyed like
  * "GET /api/users/:id", with the same addresses and JSON as the old server, so the screens do not change.
  */
-const table: Record<string, Handler> = { ...auth, ...catalog, ...sales, ...crm, ...suppliers, ...lpo, ...reports, ...misc };
+const table: Record<string, Handler> = { ...auth, ...catalog, ...sales, ...crm, ...suppliers, ...lpo, ...reports, ...misc, ...backup };
 const compiled = Object.entries(table).map(([key, fn]) => {
   const [method, path] = key.split(" ");
   return { method, parts: path.split("/").filter(Boolean), fn };

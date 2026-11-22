@@ -705,6 +705,51 @@ try {
     assert.equal((await api("GET", "/api/sales?from=2026-02-30&to=2026-03-01")).status, 400, "an impossible date is refused");
   }
 
+  // =================== backup and export ===================
+  {
+    assert.equal((await api("GET", "/api/backup/summary", undefined, cashierTok)).status, 403, "cashier cannot export data");
+    assert.equal((await api("GET", "/api/backup/products", undefined, cashierTok)).status, 403, "nor read a dataset");
+    const sum = await api("GET", "/api/backup/summary");
+    assert.equal(sum.status, 200, JSON.stringify(sum.body).slice(0, 200));
+    const keys = sum.body.datasets.map((d: any) => d.key) as string[];
+    for (const k of ["products", "sales", "customers", "suppliers", "users", "auditLog"]) assert.ok(keys.includes(k), "dataset listed: " + k);
+    assert.ok(!keys.some((k) => /session|attempt|file/i.test(k)), "sign-in sessions and uploaded files are never offered");
+
+    // the row count matches what the screens show
+    const pc = await api("GET", "/api/backup/products/count");
+    assert.equal(pc.status, 200);
+    assert.equal(pc.body.rows, (await api("GET", "/api/products/page?limit=1&all=1")).body.total, "the product count matches the catalogue");
+
+    // reading every page with the cursor collects exactly the counted rows
+    const pageAll = async (key: string) => {
+      let cursor = "", pages = 0;
+      const rows: any[] = [];
+      for (;;) {
+        const p = await api("GET", `/api/backup/${key}?cursor=${encodeURIComponent(cursor)}`);
+        assert.equal(p.status, 200, key + ": " + JSON.stringify(p.body).slice(0, 200));
+        rows.push(...p.body.rows);
+        if (p.body.done) break;
+        cursor = p.body.cursor;
+        assert.ok(++pages < 200, "paging must end");
+      }
+      return rows;
+    };
+    const salesRows = await pageAll("sales");
+    assert.equal(salesRows.length, (await api("GET", "/api/backup/sales/count")).body.rows, "every sale is exported once");
+    assert.ok(salesRows.length >= 1 && Array.isArray(salesRows[0].items), "a sale carries its items");
+    assert.ok(salesRows.every((r) => !("_id" in r) && !("_creationTime" in r)), "Convex's own fields are removed");
+    const staffRows = await pageAll("users");
+    assert.ok(staffRows.length >= 2, "staff are exported");
+    assert.ok(!JSON.stringify(staffRows).includes("pinHash"), "PIN hashes are never exported");
+    assert.ok(staffRows.every((r) => typeof r.name === "string" && "roleId" in r), "staff keep name and role");
+    const prodRows = await pageAll("products");
+    assert.equal(prodRows.length, pc.body.rows, "every product is exported once");
+
+    assert.equal((await api("GET", "/api/backup/sessions")).status, 404, "sessions are not a data set");
+    assert.equal((await api("GET", "/api/backup/nothing")).status, 404, "unknown data set");
+    assert.equal((await api("GET", "/api/backup/nothing/count")).status, 404, "unknown data set count");
+  }
+
   // =================== fast and slow movers ===================
   {
     assert.equal((await api("GET", "/api/reports/movers", undefined, cashierTok)).status, 403, "cashier cannot open reports");
