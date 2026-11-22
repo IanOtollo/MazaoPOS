@@ -37,7 +37,7 @@ export default function Suppliers() {
   useLive(["suppliers", "stock"], load);
 
   return (
-    <div className="p-4 sm:p-6 max-w-6xl">
+    <div className="p-4 sm:p-6">
       <PageHead title="Suppliers">
         <Button onClick={() => setForm("new")} className="flex items-center gap-1.5"><Plus className="size-4" />Add supplier</Button>
         <Button onClick={() => setNewOrder({})} className="flex items-center gap-1.5"><ClipboardList className="size-4" />New order</Button>

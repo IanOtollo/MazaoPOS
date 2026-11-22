@@ -48,7 +48,7 @@ export default function Customers() {
   const shown = view === "overdue" ? owingRows.filter((c) => c.overdue_cents > 0) : owingRows;
 
   return (
-    <div className="p-4 sm:p-6 max-w-6xl">
+    <div className="p-4 sm:p-6">
       <PageHead title="Customers">
         <Input placeholder="Search name or phone" value={q} onChange={(e) => setQ(e.target.value)} className="!w-56 sm:!w-64" />
         {can("customers.create") && <Button variant="primary" onClick={() => setEdit("new")} className="flex items-center gap-1.5"><Plus className="size-4" />Register customer</Button>}

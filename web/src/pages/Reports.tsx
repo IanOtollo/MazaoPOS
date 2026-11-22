@@ -30,7 +30,7 @@ export default function Reports() {
   const waiting = current.byPeriod && !d;
 
   return (
-    <div className="p-4 sm:p-6 max-w-6xl">
+    <div className="p-4 sm:p-6">
       <PageHead title="Reports">
         <span className="print:hidden contents">{current.byPeriod ? picker : <span className="text-sm text-slate-500">As of today</span>}</span>
       </PageHead>

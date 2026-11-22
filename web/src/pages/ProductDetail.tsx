@@ -72,7 +72,7 @@ export default function ProductDetail() {
   };
 
   return (
-    <div className="p-4 max-w-6xl">
+    <div className="p-4">
       <nav className="text-sm text-slate-500 mb-2" aria-label="Breadcrumb"><Link to="/inventory" className="hover:underline">Inventory</Link> <span aria-hidden>/</span> <span className="text-slate-700">{p.name}</span></nav>
 
       <div className="flex flex-wrap items-start justify-between gap-3 mb-4">

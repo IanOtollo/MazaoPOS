@@ -12,7 +12,7 @@ export default function Dashboard() {
   const sp = d ? kpiSeries(d) : null;
 
   return (
-    <div className="p-4 sm:p-6 max-w-6xl">
+    <div className="p-4 sm:p-6">
       <PageHead title="Dashboard">{picker}</PageHead>
       {d && <p className="text-sm text-slate-500 -mt-2 mb-4">{d.days === 1 ? fmtDay(d.to) : `${fmtDay(d.from)} to ${fmtDay(d.to)}`}</p>}
       {err && <p className="text-danger font-medium mb-4" role="alert">{err}</p>}
