@@ -189,7 +189,8 @@ function StaffForm({ row, roles, selfId, onClose, onSaved }: { row: StaffRow | n
     if (pin && !/^\d{4,8}$/.test(pin)) return setErr("PIN must be 4 to 8 digits");
     if (roleId === "") return setErr("Choose a role");
     try {
-      if (row) await patch(`/api/users/${row.id}`, { roleId, active, ...(pin ? { pin } : {}) });
+      if (!name.trim()) return setErr("Enter a name");
+      if (row) await patch(`/api/users/${row.id}`, { roleId, active, ...(name.trim() !== row.name ? { name: name.trim() } : {}), ...(pin ? { pin } : {}) });
       else {
         if (!name.trim() || !pin) return setErr("Name and PIN are required");
         await post("/api/users", { name: name.trim(), pin, roleId });
@@ -201,7 +202,7 @@ function StaffForm({ row, roles, selfId, onClose, onSaved }: { row: StaffRow | n
   return (
     <Modal title={row ? `Edit ${row.name}` : "Add staff member"} onClose={onClose}>
       <div className="space-y-4">
-        {!row && <Field label="Name"><Input value={name} onChange={(e) => setName(e.target.value)} autoFocus /></Field>}
+        <Field label="Name"><Input value={name} onChange={(e) => setName(e.target.value)} autoFocus={!row} maxLength={60} /></Field>
         <Field label="Role" hint={selected ? `${selected.description} (${selected.permissions.length} permissions)` : undefined}>
           <Select className={inputCls} value={roleId} onChange={(e) => setRoleId(Number(e.target.value))} disabled={self}>
             {roles.map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}

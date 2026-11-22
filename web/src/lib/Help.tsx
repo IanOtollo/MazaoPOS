@@ -7,7 +7,7 @@ import { GUIDES, type Guide } from "./guides";
 import { resetA11y, setA11y, useA11y, type TextSize } from "./a11y";
 
 /** The "Help & accessibility" button for the footer. Pressing ? anywhere (outside a text box) opens it too. */
-export function HelpButton() {
+export function HelpButton({ variant = "text" }: { variant?: "text" | "icon" }) {
   const [open, setOpen] = useState(false);
   useEffect(() => {
     const h = (e: KeyboardEvent) => {
@@ -22,9 +22,16 @@ export function HelpButton() {
   }, []);
   return (
     <>
-      <button onClick={() => setOpen(true)} aria-haspopup="dialog" className="inline-flex items-center gap-1.5 rounded px-1.5 py-0.5 hover:bg-slate-100 hover:text-slate-800">
-        <CircleHelp className="size-3.5" aria-hidden />Help and accessibility
-      </button>
+      {variant === "icon" ? (
+        <button onClick={() => setOpen(true)} aria-haspopup="dialog" aria-label="Help and accessibility" title="Help and accessibility"
+          className="size-9 rounded-lg flex items-center justify-center text-slate-600 hover:bg-slate-100 hover:text-slate-900">
+          <CircleHelp className="size-5" aria-hidden />
+        </button>
+      ) : (
+        <button onClick={() => setOpen(true)} aria-haspopup="dialog" className="inline-flex items-center gap-1.5 rounded px-1.5 py-0.5 hover:bg-slate-100 hover:text-slate-800">
+          <CircleHelp className="size-3.5" aria-hidden />Help and accessibility
+        </button>
+      )}
       {open && <HelpPanel onClose={() => setOpen(false)} />}
     </>
   );
@@ -170,6 +177,7 @@ function Accessibility() {
           <dt><Key>Enter</Key></dt><dd>Press the selected button. On the PIN pad it signs you in.</dd>
           <dt><Key>Esc</Key></dt><dd>Close a window that is open.</dd>
           <dt><Key>?</Key></dt><dd>Open this help from anywhere.</dd>
+          <dt><Key>/</Key></dt><dd>Search for an item or a page.</dd>
           <dt><Key>0</Key> to <Key>9</Key></dt><dd>Type the PIN on the sign-in screen.</dd>
         </dl>
       </section>

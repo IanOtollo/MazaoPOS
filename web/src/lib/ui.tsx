@@ -1,5 +1,5 @@
 import { Children, isValidElement, useEffect, useRef, useState, type ButtonHTMLAttributes, type ComponentProps, type InputHTMLAttributes, type ReactElement, type ReactNode } from "react";
-import { Check, ChevronDown } from "lucide-react";
+import { Check, ChevronDown, Eye as EyeIcon, EyeOff } from "lucide-react";
 import { notifyError } from "./notify";
 
 export function Button({ variant = "default", className = "", ...p }: ButtonHTMLAttributes<HTMLButtonElement> & { variant?: "default" | "primary" | "danger" }) {
@@ -26,14 +26,22 @@ export function Input(p: ComponentProps<"input">) {
   return <input {...p} className={`${inputCls} ${p.className ?? ""}`} />;
 }
 
-/** A short, centred box for a 4 to 8 digit PIN. Digits only, hidden as typed. */
+/** A short, centred box for a 4 to 8 digit PIN. Digits only, hidden as typed, with an eye to show it. */
 export function PinInput({ onChange, className = "", ...p }: Omit<ComponentProps<"input">, "type" | "inputMode" | "maxLength">) {
+  const [shown, setShown] = useState(false);
+  const Eye = shown ? EyeOff : EyeIcon;
   return (
-    <input
-      {...p} type="password" inputMode="numeric" autoComplete={p.autoComplete ?? "off"} maxLength={8}
-      onChange={(e) => { e.target.value = e.target.value.replace(/\D/g, "").slice(0, 8); onChange?.(e); }}
-      className={`${inputCls} !w-36 text-center text-lg tracking-[0.35em] tabular-nums ${className}`}
-    />
+    <span className="relative inline-block w-44 max-w-full">
+      <input
+        {...p} type={shown ? "text" : "password"} inputMode="numeric" autoComplete={p.autoComplete ?? "off"} maxLength={8}
+        onChange={(e) => { e.target.value = e.target.value.replace(/\D/g, "").slice(0, 8); onChange?.(e); }}
+        className={`${inputCls} text-center text-lg tracking-[0.35em] tabular-nums pl-10 pr-10 ${className}`}
+      />
+      <button type="button" onClick={() => setShown((v) => !v)} aria-label={shown ? "Hide PIN" : "Show PIN"} aria-pressed={shown}
+        className="absolute right-1 top-1/2 -translate-y-1/2 size-8 rounded-md flex items-center justify-center text-slate-500 hover:bg-slate-100 hover:text-slate-900">
+        <Eye className="size-[18px]" aria-hidden />
+      </button>
+    </span>
   );
 }
 

@@ -127,6 +127,13 @@ export const routes: Record<string, Handler> = {
     if (pin !== undefined && !PIN_RE.test(pin)) return fail(400, "pin: PIN must be 4 to 8 digits");
     const roleId = body?.roleId === undefined ? undefined : Number(body.roleId);
     const active = body?.active as boolean | undefined;
+    let name: string | undefined;
+    if (body?.name !== undefined) {
+      if (typeof body.name !== "string" || !body.name.trim()) return fail(400, "name: Enter a name");
+      const trimmed: string = body.name.trim();
+      if (trimmed.length > 60) return fail(400, "name: Too long");
+      name = trimmed;
+    }
     const target = await ctx.db.query("users").withIndex("by_numId", (q) => q.eq("id", id)).unique();
     if (!target) return fail(404, "User not found");
     if (!(await coversRole(ctx, actor, target.roleId))) return fail(403, "You cannot change an account with more access than your own");
@@ -145,9 +152,10 @@ export const routes: Record<string, Handler> = {
     }
     if (roleId !== undefined) patch.roleId = roleId;
     if (active !== undefined) patch.active = active;
+    if (name !== undefined) patch.name = name;
     await ctx.db.patch(target._id, patch);
     if (active === false) for (const s of await ctx.db.query("sessions").withIndex("by_user", (q) => q.eq("userId", id)).collect()) await ctx.db.delete(s._id);
-    await audit(ctx, actor.id, "user_update", { id, roleId, active, pinChanged: !!pin });
+    await audit(ctx, actor.id, "user_update", { id, roleId, active, renamed: name !== undefined, pinChanged: !!pin });
     return { ok: true };
   },
 

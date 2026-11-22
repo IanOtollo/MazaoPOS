@@ -1,7 +1,7 @@
 import { useMemo, useState, type ReactNode } from "react";
 
 export const kes0 = (c: number) => Math.round(c / 100).toLocaleString("en-KE");
-export const METHOD: Record<string, string> = { cash: "Cash", mpesa: "M-Pesa", card: "Card", bank: "Bank", credit: "On account" };
+export const METHOD: Record<string, string> = { cash: "Cash", mpesa: "M-Pesa", card: "Card", bank: "Bank", credit: "On credit (unpaid)" };
 
 export function Card({ title, sub, badge, action, children }: { title: string; sub?: string; badge?: number; action?: ReactNode; children: ReactNode }) {
   return (

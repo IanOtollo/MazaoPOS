@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import { Download, Upload } from "lucide-react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { fmtKES, fmtQty } from "../../../shared/money";
 import { fetchAllProducts, get, useAuth, type Product } from "../lib/api";
@@ -65,8 +66,8 @@ export default function Products() {
   return (
     <div className="p-4">
       <PageHead title="Inventory">
-        {canManage && <Button onClick={() => setImporting(true)}>Import</Button>}
-        <Button onClick={exportCsv} disabled={exporting}>{exporting ? "Exporting" : "Export"}</Button>
+        {canManage && <Button onClick={() => setImporting(true)} className="inline-flex items-center gap-2"><Upload className="size-4" aria-hidden />Import</Button>}
+        <Button onClick={exportCsv} disabled={exporting} className="inline-flex items-center gap-2"><Download className="size-4" aria-hidden />{exporting ? "Exporting" : "Export"}</Button>
         {canManage && <Button variant="primary" onClick={() => setAdding(true)}>Add product</Button>}
       </PageHead>
 

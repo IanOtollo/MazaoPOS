@@ -39,7 +39,7 @@ export const GUIDES: Guide[] = [
       { text: "The customer must be registered first (see Register a customer who borrows). Cashiers cannot see what anyone owes." },
       { text: "Add the items to the cart as usual." },
       { text: "Choose the customer's account instead of No account, ordinary sale." },
-      { text: "Press Pay and choose credit. If your role cannot give credit, a manager types their PIN.", tip: "Credit is refused if it goes over the customer's limit, or if their credit has been stopped." },
+      { text: "Press Pay and choose Credit (pay later). If your role cannot give credit, a manager types their PIN.", tip: "Credit is refused if it goes over the customer's limit, or if their credit has been stopped." },
       { text: "Print the receipt. The amount is added to what the customer owes." },
     ],
   },

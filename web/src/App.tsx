@@ -17,6 +17,9 @@ import Shift from "./pages/Shift";
 import Settings from "./pages/Settings";
 import Suppliers from "./pages/Suppliers";
 import { SiteFooter } from "./lib/Footer";
+import { SideTips } from "./lib/SideTips";
+import { HelpButton } from "./lib/Help";
+import { GlobalSearch, type SearchPage } from "./lib/GlobalSearch";
 import NotFound from "./pages/NotFound";
 import ProductDetail from "./pages/ProductDetail";
 
@@ -136,9 +139,25 @@ function Shell({ user, onLogout }: { user: User; onLogout: () => void }) {
     const cur = new URLSearchParams(loc.search).get("tab") ?? "";
     return cur === tab || (tab === "" && !["staff", "roles", "backup"].includes(cur));
   };
+  const searchPages = [
+    canReports && { label: "Dashboard", to: "/dashboard", also: "overview today" },
+    canReports && { label: "Reports", to: "/reports", also: "fast slow movers vat profit sales" },
+    canSell && { label: "Sell", to: "/", also: "till pos checkout" },
+    { label: "Sales history", to: "/sales", also: "refund receipt invoice" },
+    { label: "Inventory", to: "/inventory", also: "products items stock" },
+    { label: "Stock movements", to: "/inventory?tab=movements", also: "ledger history" },
+    { label: "Categories", to: "/inventory?tab=categories", also: "groups" },
+    can("suppliers.manage") && { label: "Suppliers", to: "/suppliers", also: "lpo orders purchase reorder deliveries" },
+    can("customers.manage") && { label: "Customers", to: "/customers", also: "debtors borrowers credit owe" },
+    showShift && { label: "Shift and cash-up", to: "/shift", also: "close shift drawer" },
+    can("settings.manage") && { label: "Business settings", to: "/settings", also: "name logo receipt address" },
+    can("users.manage") && { label: "Staff", to: "/settings?tab=staff", also: "users pin add delete" },
+    can("roles.manage") && { label: "Roles and access", to: "/settings?tab=roles", also: "permissions" },
+  ].filter(Boolean) as SearchPage[];
+
   const renderSidebar = (collapsed: boolean, inDrawer = false) => {
   const item = (to: string, label: string, Icon: LucideIcon, badge?: ReactNode, end = false, active?: boolean) => (
-    <NavLink key={to} to={to} end={end} title={collapsed ? label : undefined}
+    <NavLink key={to} to={to} end={end} data-tip={collapsed ? label : undefined}
       className={({ isActive }) =>
         `relative flex items-center gap-3 rounded-lg px-3 py-2 font-semibold text-sm transition-colors ${collapsed ? "justify-center" : ""} ${(active ?? isActive) ? "bg-accent text-white shadow-sm" : "text-slate-300 hover:bg-white/10 hover:text-white"}`}>
       {({ isActive }) => (
@@ -180,7 +199,7 @@ function Shell({ user, onLogout }: { user: User; onLogout: () => void }) {
             {!collapsed && logo && <img src={logo} alt="" className="size-9 shrink-0 rounded-lg object-contain bg-white p-0.5" />}
             {!collapsed && <span className="flex-1 font-bold text-white tracking-tight leading-tight truncate">{brandOr(biz)}</span>}
             {!inDrawer && (
-              <button onClick={toggle} title={collapsed ? "Expand menu" : "Collapse menu"} aria-label={collapsed ? "Expand menu" : "Collapse menu"} aria-expanded={!collapsed}
+              <button onClick={toggle} data-tip={collapsed ? "Expand menu" : "Collapse menu"} aria-label={collapsed ? "Expand menu" : "Collapse menu"} aria-expanded={!collapsed}
                 className="size-9 shrink-0 rounded-lg flex items-center justify-center text-slate-300 hover:bg-white/10 hover:text-white">
                 {collapsed ? <PanelLeftOpen className="size-5" /> : <PanelLeftClose className="size-5" />}
               </button>
@@ -188,8 +207,8 @@ function Shell({ user, onLogout }: { user: User; onLogout: () => void }) {
           </div>
 
           {/* shift status */}
-          {showShift && <NavLink to="/shift" title={collapsed ? (status.shiftOpenedAt ? "Shift open" : "No open shift") : undefined}
-            className={`mx-3 mt-4 rounded-lg border px-3 py-2.5 flex items-center gap-3 ${collapsed ? "justify-center px-0" : ""} ${"border-white/15 bg-white/10"}`}>
+          {showShift && <NavLink to="/shift" data-tip={collapsed ? (status.shiftOpenedAt ? "Shift open" : "No open shift") : undefined}
+            className={`mx-3 mt-3 rounded-lg border px-3 py-2.5 flex items-center gap-3 ${collapsed ? "justify-center px-0" : ""} ${"border-white/15 bg-white/10"}`}>
             <span className={`size-2.5 shrink-0 rounded-full ${status.shiftOpenedAt ? "bg-green-600" : "bg-amber-500"}`} />
             {!collapsed && (
               <span className="leading-tight min-w-0">
@@ -200,7 +219,7 @@ function Shell({ user, onLogout }: { user: User; onLogout: () => void }) {
           </NavLink>}
 
           {/* navigation */}
-          <nav className="flex-1 overflow-y-auto px-3 py-5">
+          <nav className="flex-1 overflow-y-auto px-3 py-4">
             {canReports && group("Overview", <>
               {item("/dashboard", "Dashboard", LayoutDashboard)}
               {item("/reports", "Reports", BarChart3)}
@@ -225,22 +244,24 @@ function Shell({ user, onLogout }: { user: User; onLogout: () => void }) {
             </>)}
           </nav>
 
-          {/* user + collapse */}
+          {/* who is signed in: here only in the phone menu; on larger screens it is in the top bar */}
+          {inDrawer && (
           <div className="border-t border-white/10 p-2 space-y-1">
             <div className={`flex items-center gap-2.5 rounded-lg px-2 py-1 ${collapsed ? "justify-center px-0" : ""}`}>
-              <span className="size-8 shrink-0 rounded-full bg-white/15 text-white text-sm font-bold flex items-center justify-center" title={collapsed ? `${user.name} (${user.role})` : undefined}>{user.name[0]?.toUpperCase()}</span>
+              <span className="size-8 shrink-0 rounded-full bg-white/15 text-white text-sm font-bold flex items-center justify-center" data-tip={collapsed ? `${user.name} (${user.role})` : undefined}>{user.name[0]?.toUpperCase()}</span>
               {!collapsed && (
                 <>
                   <span className="leading-tight min-w-0 flex-1">
                     <span className="block text-sm font-semibold text-white truncate">{user.name}</span>
                     {user.role.toLowerCase() !== user.name.toLowerCase() && <span className="block text-xs text-slate-400 capitalize">{user.role}</span>}
                   </span>
-                  <button onClick={logout} title="Sign out" aria-label="Sign out" className="p-1.5 rounded-lg text-slate-400 hover:bg-white/10 hover:text-white"><LogOut className="size-[18px]" /></button>
+                  <button onClick={logout} data-tip="Sign out" aria-label="Sign out" className="p-1.5 rounded-lg text-slate-400 hover:bg-white/10 hover:text-white"><LogOut className="size-[18px]" /></button>
                 </>
               )}
             </div>
-            {collapsed && <button onClick={logout} title="Sign out" aria-label="Sign out" className="w-full flex justify-center p-2 rounded-lg text-slate-400 hover:bg-white/10 hover:text-white"><LogOut className="size-5" /></button>}
+            {collapsed && <button onClick={logout} data-tip="Sign out" aria-label="Sign out" className="w-full flex justify-center p-2 rounded-lg text-slate-400 hover:bg-white/10 hover:text-white"><LogOut className="size-5" /></button>}
           </div>
+          )}
       </>
     );
   };
@@ -256,6 +277,8 @@ function Shell({ user, onLogout }: { user: User; onLogout: () => void }) {
             <span className={`size-2.5 rounded-full ${status.shiftOpenedAt ? "bg-green-600" : "bg-amber-500"}`} />{status.shiftOpenedAt ? "Shift open" : "No shift"}
           </NavLink>}
         </header>
+
+        <SideTips />
 
         {/* desktop / tablet sidebar */}
         <aside className={`${collapsed ? "w-[4.75rem]" : "w-64"} side hidden md:flex shrink-0 bg-side border-r border-white/10 flex-col transition-[width] duration-200 print:hidden`}>
@@ -277,6 +300,26 @@ function Shell({ user, onLogout }: { user: User; onLogout: () => void }) {
 
 
         <div className="flex-1 min-h-0 min-w-0 flex flex-col">
+        {/* top navigation bar: search on the left; shift, help and who is signed in on the right */}
+        <div className="shrink-0 bg-white border-b border-slate-200 px-4 py-2 flex items-center gap-3 print:hidden">
+          <div className="flex-1 min-w-0 max-w-xl"><GlobalSearch pages={searchPages} /></div>
+          <div className="hidden md:flex items-center gap-2 ml-auto">
+            {showShift && (
+              <NavLink to="/shift" className="flex items-center gap-2 text-sm font-semibold rounded-lg border border-slate-300 px-3 py-1.5 hover:bg-slate-50">
+                <span className={`size-2.5 rounded-full ${status.shiftOpenedAt ? "bg-green-600" : "bg-amber-500"}`} />{status.shiftOpenedAt ? "Shift open" : "No open shift"}
+              </NavLink>
+            )}
+            <HelpButton variant="icon" />
+            <div className="flex items-center gap-2 pl-3 ml-1 border-l border-slate-200">
+              <span className="size-8 shrink-0 rounded-full bg-accent text-white text-sm font-bold flex items-center justify-center" aria-hidden>{user.name[0]?.toUpperCase()}</span>
+              <span className="leading-tight hidden lg:block">
+                <span className="block text-sm font-semibold">{user.name}</span>
+                {user.role.toLowerCase() !== user.name.toLowerCase() && <span className="block text-xs text-slate-500 capitalize">{user.role}</span>}
+              </span>
+              <button onClick={logout} aria-label="Sign out" title="Sign out" className="size-9 rounded-lg flex items-center justify-center text-slate-500 hover:bg-slate-100 hover:text-slate-900"><LogOut className="size-5" /></button>
+            </div>
+          </div>
+        </div>
         <main className="flex-1 min-h-0 min-w-0 overflow-auto">
           {lost && <div role="status" className="sticky top-0 z-20 bg-amber-100 text-amber-900 text-sm font-medium px-4 py-2 text-center print:hidden">Lost the connection to the shop computer. Retrying, and new activity will appear when it is back.</div>}
           <Routes>

@@ -13,7 +13,7 @@ const METHODS: { id: Method; label: string; Icon: LucideIcon }[] = [
   { id: "mpesa", label: "M-Pesa", Icon: Smartphone },
   { id: "card", label: "Card", Icon: CreditCard },
   { id: "bank", label: "Bank", Icon: Landmark },
-  { id: "credit", label: "On account", Icon: BookUser },
+  { id: "credit", label: "Credit (pay later)", Icon: BookUser },
 ];
 
 /** Round-up cash suggestions: exact, then the next 50/100/500/1000 notes above the amount. */
@@ -109,7 +109,7 @@ export function PayModal({ total, customer, items, discount, approvalPin, onClos
             {pays.map((p, i) => (
               <div key={i} onClick={() => setActive(i)}
                 className={`flex items-center justify-between rounded-lg px-3 py-2 text-sm cursor-pointer ${i === active ? "bg-white border border-accent" : "border border-transparent hover:bg-white"}`}>
-                <span className="font-medium capitalize">{p.method === "credit" ? "On account" : p.method}</span>
+                <span className="font-medium capitalize">{p.method === "credit" ? "Credit (pay later)" : p.method}</span>
                 <span className="flex items-center gap-2 num font-semibold">{fmtKES(toCents(p.amount ?? 0))}
                   {pays.length > 1 && (
                     <button onClick={(e) => { e.stopPropagation(); setPays((x) => x.filter((_, k) => k !== i)); setActive(0); }} aria-label="Remove payment" className="text-slate-400 hover:text-danger"><X className="size-4" /></button>

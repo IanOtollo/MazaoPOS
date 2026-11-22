@@ -189,6 +189,10 @@ try {
   // =================== deleting staff ===================
   {
     const me = (await api("GET", "/api/me")).body.id as number;
+    assert.equal((await api("PATCH", `/api/users/${me}`, { name: "Ian" })).status, 200, "the admin can rename themselves");
+    assert.equal((await api("GET", "/api/me")).body.name, "Ian", "the new name shows as who is signed in");
+    assert.equal((await api("PATCH", `/api/users/${me}`, { name: "   " })).status, 400, "a name cannot be blank");
+    assert.equal((await api("PATCH", `/api/users/${me}`, { name: "Admin" })).status, 200, "and it can be changed back");
     const temp = await api("POST", "/api/users", { name: "Temp Hand", pin: "8642", roleId: roleId("Cashier") });
     assert.equal(temp.status, 200, JSON.stringify(temp.body));
     const tempTok = (await api("POST", "/api/auth/login", { pin: "8642" }, "")).body.token as string;
