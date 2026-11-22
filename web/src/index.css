@@ -18,8 +18,7 @@ html, body, #root { height: 100%; }
 
 /* height of the bottom navigation bar: taller on phones, slimmer from md up. The page footer reserves the same space. */
 :root { --bar-h: 4rem; }
-/* from md up the bar floats: its 3.5rem height plus the 1rem gap below it and some air */
-@media (min-width: 768px) { :root { --bar-h: 5rem; } }
+@media (min-width: 768px) { :root { --bar-h: 3.5rem; } }
 
 /* ---- firmer borders: cards, tables, dividers and inputs read clearly without being heavy ---- */
 .border-slate-200, .border-gray-200 { border-color: #cbd5e1; }
