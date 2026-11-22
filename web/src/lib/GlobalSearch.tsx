@@ -14,7 +14,7 @@ const WIDTH = 352;
  * Search for a page or a product from anywhere. Press / to jump here, use the arrow keys and Enter, Esc to close.
  * Pages are limited to the ones this person's role can open.
  */
-export function GlobalSearch({ pages, tone = "light" }: { pages: SearchPage[]; tone?: "light" | "dark" }) {
+export function GlobalSearch({ pages, onExpand = () => {}, collapsed = false, tone = "light" }: { pages: SearchPage[]; onExpand?: () => void; collapsed?: boolean; tone?: "light" | "dark" }) {
   const nav = useNavigate();
   const listId = useId();
   const input = useRef<HTMLInputElement>(null);
@@ -70,11 +70,21 @@ export function GlobalSearch({ pages, tone = "light" }: { pages: SearchPage[]; t
       const wantsSearch = ((e.key === "/" && !typing) || ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k")) && !document.querySelector('[aria-modal="true"]');
       if (!wantsSearch) return;
       e.preventDefault();
+      if (collapsed) { onExpand(); return; }
       input.current?.focus();
     };
     window.addEventListener("keydown", h);
     return () => window.removeEventListener("keydown", h);
-  }, []);
+  }, [collapsed, onExpand]);
+
+  if (collapsed) {
+    return (
+      <button onClick={onExpand} data-tip="Search items and pages" aria-label="Search items and pages"
+        className="mx-auto size-10 rounded-lg flex items-center justify-center text-slate-300 hover:bg-white/10 hover:text-white">
+        <Search className="size-5" aria-hidden />
+      </button>
+    );
+  }
 
   const showPanel = open && term.length > 0 && pos;
   return (

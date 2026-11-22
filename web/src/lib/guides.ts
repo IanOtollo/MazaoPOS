@@ -15,7 +15,7 @@ export const GUIDES: Guide[] = [
   {
     id: "sale", title: "Make a sale", summary: "Ring up items and take payment.", group: "Selling", needs: "sales.create", go: "/",
     steps: [
-      { text: "Open Sell from the bottom bar (under Selling). If it asks you to start a shift, enter the cash in the drawer and press Start shift.", tip: "You cannot sell without an open shift. This is how the day's cash is tracked." },
+      { text: "Open Sell from the menu. If it asks you to start a shift, enter the cash in the drawer and press Start shift.", tip: "You cannot sell without an open shift. This is how the day's cash is tracked." },
       { text: "Find the item. Type its name or code, or scan the barcode, then tap it to add it to the sale." },
       { text: "Check the cart. Change the quantity if needed. Items sold by the metre or kilo accept decimals." },
       { text: "Need to give a discount? Press Add discount. If your role cannot, a manager types their PIN." },
@@ -122,7 +122,7 @@ export const GUIDES: Guide[] = [
   {
     id: "staff", title: "Add staff and choose what they can do", summary: "Each person signs in with their own PIN.", group: "Business", needs: "users.manage", go: "/settings?tab=staff",
     steps: [
-      { text: "On the bottom bar open Admin, then Staff, and press Add staff." },
+      { text: "Open Settings, then Staff, and press Add staff." },
       { text: "Type their name, pick a role and give them a PIN of 4 to 8 digits.", tip: "Every PIN must be different. The PIN is how the system knows who is selling." },
       { text: "To change what a role can do, open Roles & access and edit the role." },
       { text: "To stop someone signing in, disable their account. Their past sales stay on record." },
@@ -131,7 +131,7 @@ export const GUIDES: Guide[] = [
   {
     id: "business", title: "Change the shop name and logo", summary: "What shows on the sign-in screen and receipts.", group: "Business", needs: "settings.manage", go: "/settings",
     steps: [
-      { text: "On the bottom bar open Admin, then Business." },
+      { text: "Open Settings, then Business." },
       { text: "Change the name, address and phone. The receipt footer is the line printed at the bottom of each receipt." },
       { text: "Upload your logo. A PNG or JPG under 400 KB works best." },
       { text: "Press Save settings." },
