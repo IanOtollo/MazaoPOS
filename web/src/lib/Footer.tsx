@@ -6,8 +6,8 @@ export const MAKER = (
 );
 
 /**
- * Bottom bar. On the sign-in screen the rights notice sits in the centre and the maker's link at the right.
- * Inside the app it is one small line so it never takes space from the work.
+ * Bottom line. Sign-in: help on the left, the rights notice in the centre. Inside the app: one small line.
+ * The maker's link (MAKER) is shown only under the PIN card on the sign-in screen.
  */
 export function SiteFooter({ variant = "app" }: { variant?: "app" | "auth" }) {
   const rights = `© ${new Date().getFullYear()} ${brandOr(useBrand())}. All rights reserved.`;
@@ -24,7 +24,6 @@ export function SiteFooter({ variant = "app" }: { variant?: "app" | "auth" }) {
     <footer className="shrink-0 flex items-center justify-between gap-3 px-4 py-1.5 text-[11px] leading-4 text-slate-400 border-t border-slate-200 bg-white print:hidden">
       <span className="truncate hidden sm:block">{rights}</span>
       <HelpButton />
-      <span className="shrink-0">{MAKER}</span>
     </footer>
   );
 }
